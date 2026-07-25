@@ -346,6 +346,13 @@ export async function login(user: string, pass: string): Promise<string> {
         localStorage.setItem("refresh_token", data.refresh || "");
         localStorage.setItem("user_id", data.user_id?.toString() || "");
         localStorage.setItem("username", data.username || user);
+        
+        const firstName = data.first_name?.trim() || "";
+        const lastName = data.last_name?.trim() || "";
+        let fullName = `${firstName} ${lastName}`.trim();
+        if (!fullName) fullName = data.username || user;
+        localStorage.setItem("user_fullname", fullName);
+        
         localStorage.setItem("company_enabled", data.company_enabled ? "true" : "false");
         pingSpaces();
         return token;
@@ -874,7 +881,7 @@ export async function generatePdf(muestraId: number | string, config: ReportConf
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ muestra_id: Number(muestraId), config }),
+    body: JSON.stringify({ muestra_id: Number(muestraId), config, operador_nombre: localStorage.getItem("user_fullname") || localStorage.getItem("username") || "Operador" }),
   });
 
   if (!res.ok) {

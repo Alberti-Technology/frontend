@@ -5140,8 +5140,8 @@ export default function FileManager({
     [pushToast],
   );
 
-  const handleGeneratePdf = async () => {
-    if (!selectedPdfMuestraId) {
+  const handleGeneratePdf = async (targetMuestraId: string) => {
+    if (!targetMuestraId) {
       pushToast(
         "Seleccioná una muestra para generar el informe.",
         "info",
@@ -5151,7 +5151,7 @@ export default function FileManager({
     }
 
     const selectedMuestra = apiMuestras.find(
-      (mue) => String(mue.id) === String(selectedPdfMuestraId),
+      (mue) => String(mue.id) === String(targetMuestraId),
     );
     if (!selectedMuestra) {
       pushToast("No se encontró la muestra seleccionada.", "error", 7200);
@@ -5194,7 +5194,7 @@ export default function FileManager({
     try {
       setPdfLoading(true);
       pushToast("Generando informe, aguarde...", "info", 5000);
-      await api.generatePdf(selectedPdfMuestraId, reportConfig);
+      await api.generatePdf(targetMuestraId, reportConfig);
       pushToast("Informe generado correctamente.", "success", 3000);
     } catch (err: any) {
       console.error(err);
@@ -5474,6 +5474,7 @@ export default function FileManager({
     isChartProcessing = false,
     isChartFailed = false,
     onClick,
+    onGeneratePdf,
   }: {
     id: string;
     name: string;
@@ -5488,6 +5489,7 @@ export default function FileManager({
     isChartProcessing?: boolean;
     isChartFailed?: boolean;
     onClick: () => void;
+    onGeneratePdf?: () => void;
   }) => {
     const isFolder = type !== "micrografia";
     const isSelected = selectedId === id;
@@ -5633,6 +5635,18 @@ export default function FileManager({
               }}
             >
               <TrashIcon />
+            </button>
+          )}
+          {type === "muestra" && onGeneratePdf && (
+            <button
+              title="Generar informe"
+              className="h-6 w-6 rounded-md border border-[#8b5cf633] bg-[#f5f3ff] text-[#8b5cf6] hover:bg-[#ede9fe] transition flex items-center justify-center"
+              onClick={(e) => {
+                e.stopPropagation();
+                onGeneratePdf();
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
             </button>
           )}
         </div>
@@ -5836,6 +5850,7 @@ export default function FileManager({
                         type="muestra"
                         isOpen={expandedIds.has(mue.id)}
                         onClick={() => handleClickMuestra(mue, mat)}
+                        onGeneratePdf={() => checkMicrographLimit(() => handleGeneratePdf(apiId(mue.id)))}
                       />
                     </div>
 
@@ -6093,282 +6108,217 @@ export default function FileManager({
               <h3 className="text-base font-bold text-[#10243f] m-0">Informes</h3>
             </div>
 
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            minWidth: 0,
-            overflowY: "hidden",
-            overflowX: "hidden",
-            padding: 14,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "space-between",
-            gap: 12,
-          }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateRows: "auto minmax(0, 1fr) auto minmax(0, 1fr)",
-              gap: 10,
-              flex: 1,
-              minHeight: 0,
-              minWidth: 0,
-            }}
-          >
-            <div
-              style={{ fontSize: "0.84rem", fontWeight: 700, color: "#4d6684" }}
-            >
-              Configuración del informe
-            </div>
-            
-            <div
-              className="custom-scrollbar"
-              style={{
-                border: "1px solid rgba(16,36,63,0.16)",
-                borderRadius: 18,
-                padding: "10px",
-                background: "#f9fcff",
-                minHeight: 120,
-                minWidth: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-                height: "100%",
-                overflowY: "auto",
-                fontSize: "0.85rem"
-              }}
-            >
-              <label style={{ display: "flex", gap: "8px", alignItems: "center", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={reportConfig.include_masks}
-                  onChange={(e) => setReportConfig(prev => ({ ...prev, include_masks: e.target.checked }))}
-                />
-                Incluir detección de bordes
-              </label>
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: 14 }}>
+              <div style={{ fontSize: "0.84rem", fontWeight: 700, color: "#4d6684", marginBottom: 10 }}>
+                Configuración
+              </div>
               
-              <label style={{ display: "flex", gap: "8px", alignItems: "center", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={reportConfig.include_histograms}
-                  onChange={(e) => setReportConfig(prev => ({ ...prev, include_histograms: e.target.checked }))}
-                />
-                Generar e incluir histogramas
-              </label>
+              <div
+                className="custom-scrollbar"
+                style={{
+                  border: "1px solid rgba(16,36,63,0.16)",
+                  borderRadius: 18,
+                  padding: "16px",
+                  background: "#f9fcff",
+                  flex: 6,
+                  overflowY: "auto",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 16,
+                  fontSize: "0.85rem"
+                }}
+              >
+                <label style={{ display: "flex", gap: "8px", alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={reportConfig.include_masks}
+                    onChange={(e) => setReportConfig(prev => ({ ...prev, include_masks: e.target.checked }))}
+                  />
+                  Incluir detección de bordes
+                </label>
+                
+                <label style={{ display: "flex", gap: "8px", alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={reportConfig.include_histograms}
+                    onChange={(e) => setReportConfig(prev => ({ ...prev, include_histograms: e.target.checked }))}
+                  />
+                  Generar e incluir histogramas
+                </label>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                <label style={{ fontWeight: 600, color: "#4d6684" }}>Observaciones</label>
-                <textarea
-                  value={reportConfig.custom_text}
-                  onChange={(e) => setReportConfig(prev => ({ ...prev, custom_text: e.target.value }))}
-                  placeholder="Texto personalizado a incluir en el informe..."
-                  style={{
-                    width: "100%",
-                    minHeight: "60px",
-                    resize: "vertical",
-                    padding: "6px",
-                    borderRadius: "6px",
-                    border: "1px solid #cbd5e0",
-                    fontSize: "0.8rem",
-                    fontFamily: "inherit"
-                  }}
-                />
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                <label style={{ fontWeight: 600, color: "#4d6684" }}>Conclusión final</label>
-                <textarea
-                  value={reportConfig.manual_conclusion}
-                  onChange={(e) => setReportConfig(prev => ({ ...prev, manual_conclusion: e.target.value }))}
-                  placeholder="Escriba la conclusión del análisis..."
-                  style={{
-                    width: "100%",
-                    minHeight: "60px",
-                    resize: "vertical",
-                    padding: "6px",
-                    borderRadius: "6px",
-                    border: "1px solid #cbd5e0",
-                    fontSize: "0.8rem",
-                    fontFamily: "inherit"
-                  }}
-                />
-              </div>
-            </div>
-
-            <div
-              style={{
-                fontSize: "0.84rem",
-                fontWeight: 700,
-                color: "#4d6684",
-              }}
-            >
-              Seleccione una muestra
-            </div>
-
-            <div
-              style={{
-                border: "1px solid rgba(16,36,63,0.16)",
-                borderRadius: 18,
-                padding: "10px 2px 10px 10px",
-                background: "#f9fcff",
-                minHeight: 120,
-                minWidth: 0,
-                display: "flex",
-                flexDirection: "column",
-                height: "100%",
-                overflow: "hidden",
-              }}
-            >
-              {muestrasListIsEmpty ? (
-                <div className="flex flex-col items-center justify-center flex-1 text-center opacity-70 p-2">
-                  <div className="text-[#9ca3af] mb-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: 1 }}>
+                  <label style={{ fontWeight: 600, color: "#4d6684" }}>Observaciones</label>
+                  <div style={{ position: "relative", flex: 1, display: "flex" }}>
+                    <textarea
+                      value={reportConfig.custom_text}
+                      onChange={(e) => setReportConfig(prev => ({ ...prev, custom_text: e.target.value }))}
+                      placeholder="Texto personalizado a incluir en el informe..."
+                      className="custom-scrollbar"
+                      style={{
+                        width: "100%",
+                        flex: 1,
+                        minHeight: "80px",
+                        resize: "none",
+                        padding: "10px",
+                        paddingRight: "30px",
+                        borderRadius: "8px",
+                        border: "1px solid #cbd5e0",
+                        fontSize: "0.8rem",
+                        fontFamily: "inherit",
+                        boxShadow: "inset 0 1px 2px rgba(0,0,0,0.02)"
+                      }}
+                    />
+                    <button
+                      onClick={() => setReportConfig(prev => ({ ...prev, custom_text: "" }))}
+                      title="Limpiar observaciones"
+                      style={{ position: "absolute", bottom: "8px", right: "16px", background: "transparent", border: "none", cursor: "pointer", color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4 }}
+                      onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: "#f1f5f9", color: "#64748b" })}
+                      onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: "transparent", color: "#94a3b8" })}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                    </button>
                   </div>
-                  <span className="text-[#6b7280] text-[0.9rem] italic m-0">Aún no hay muestras que mostrar.</span>
                 </div>
-              ) : (
-                <div
-                  className="custom-scrollbar"
-                  style={{
-                    width: "100%",
-                    flex: 1,
-                    overflowY: "auto",
-                    minHeight: 0,
-                  }}
-                >
-                  <ul
-                    style={{
-                      listStyle: "none",
-                      padding: 0,
-                      margin: 0,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: PDF_SELECTOR_ITEM_GAP,
-                    }}
-                  >
-                    {apiMuestras.filter((mue) => {
-                      const mat = apiMateriales.find(m => String(m.id) === String(mue.material));
-                      return !!mat?.has_model;
-                    }).map((mue) => {
-                      const muestraId = String(mue.id);
-                      const isSelected = selectedPdfMuestraId === muestraId;
-                      const isLocked =
-                        isMuestraLockedForPdfSelection(muestraId);
-                      return (
-                        <li
-                          key={mue.id}
-                          onClick={() => {
-                            if (isLocked && !isSelected) return;
-                            if (selectedPdfMuestraId !== muestraId) {
-                              setShowInformeDispatchMessage(false);
-                            }
-                            setSelectedPdfMuestraId(muestraId);
-                          }}
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: 1 }}>
+                  <label style={{ fontWeight: 600, color: "#4d6684" }}>Conclusión</label>
+                  <div style={{ position: "relative", flex: 1, display: "flex" }}>
+                    <textarea
+                      value={reportConfig.manual_conclusion}
+                      onChange={(e) => setReportConfig(prev => ({ ...prev, manual_conclusion: e.target.value }))}
+                      placeholder="Escriba la conclusión del análisis..."
+                      className="custom-scrollbar"
+                      style={{
+                        width: "100%",
+                        flex: 1,
+                        minHeight: "80px",
+                        resize: "none",
+                        padding: "10px",
+                        paddingRight: "30px",
+                        borderRadius: "8px",
+                        border: "1px solid #cbd5e0",
+                        fontSize: "0.8rem",
+                        fontFamily: "inherit",
+                        boxShadow: "inset 0 1px 2px rgba(0,0,0,0.02)"
+                      }}
+                    />
+                    <button
+                      onClick={() => setReportConfig(prev => ({ ...prev, manual_conclusion: "" }))}
+                      title="Limpiar conclusión"
+                      style={{ position: "absolute", bottom: "8px", right: "16px", background: "transparent", border: "none", cursor: "pointer", color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4 }}
+                      onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: "#f1f5f9", color: "#64748b" })}
+                      onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: "transparent", color: "#94a3b8" })}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ fontSize: "0.84rem", fontWeight: 700, color: "#4d6684", marginBottom: 10, marginTop: 14 }}>
+                Historial
+              </div>
+
+              <div
+                style={{
+                  border: "1px solid rgba(16,36,63,0.16)",
+                  borderRadius: 18,
+                  padding: "10px 2px 10px 10px",
+                  background: "#f9fcff",
+                  minHeight: 120,
+                  minWidth: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  flex: 4,
+                  overflow: "hidden",
+                }}
+              >
+                {informesListIsEmpty ? (
+                  <div className="flex flex-col items-center justify-center flex-1 text-center opacity-70 p-2">
+                    <div className="text-[#9ca3af] mb-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    </div>
+                    <span className="text-[#6b7280] text-[0.9rem] italic m-0">Aún no hay informes que mostrar.</span>
+                  </div>
+                ) : (
+                  <>
+                    {pdfHistory.length > 0 && (
+                      <div
+                        className="custom-scrollbar"
+                        style={{
+                          width: "100%",
+                          flex: 1,
+                          overflowY: "auto",
+                          minHeight: 0,
+                        }}
+                      >
+                        <ul
                           style={{
+                            listStyle: "none",
+                            padding: 0,
+                            margin: 0,
                             display: "flex",
-                            gap: 8,
-                            fontSize: "0.9rem",
-                            alignItems: "center",
-                            background: isSelected ? "#339eea" : "white",
-                            color: isSelected ? "white" : "#10243f",
-                            padding: "6px 10px",
-                            borderRadius: 9,
-                            cursor:
-                              isLocked && !isSelected
-                                ? "not-allowed"
-                                : "pointer",
-                            minHeight: PDF_SELECTOR_ITEM_HEIGHT,
-                            border: isSelected
-                              ? "1px solid #0d5a91"
-                              : "1px solid rgba(16,36,63,0.06)",
-                            opacity: isLocked && !isSelected ? 0.5 : 1,
+                            flexDirection: "column",
+                            gap: REPORT_HISTORY_ITEM_GAP,
                           }}
                         >
-                          <svg
-                            style={{ flexShrink: 0 }}
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                          </svg>
-                          <span
-                            style={{
-                              fontWeight: 500,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                              flex: 1,
-                              minWidth: 0,
-                            }}
-                            title={getMuestraDisplayName(mue)}
-                          >
-                            {getMuestraDisplayName(mue)}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
+                          {pdfHistory.map((pdf, idx) => (
+                            <li
+                              key={pdf.id || idx}
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                width: "100%",
+                                gap: 2,
+                                fontSize: "0.82rem",
+                                color: "#10243f",
+                                background: "white",
+                                padding: "8px 10px",
+                                borderRadius: 10,
+                                border: "1px solid rgba(16,36,63,0.09)",
+                                minHeight: REPORT_HISTORY_ITEM_HEIGHT,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontWeight: 600,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  width: "100%",
+                                  textAlign: "left",
+                                }}
+                              >
+                                {pdf.value || `Informe_ID_${pdf.id}`}.pdf
+                              </span>
+                              
+                              <div style={{ display: "flex", gap: "8px", alignItems: "center", justifyContent: "space-between" }}>
+                                <span style={{ fontSize: "0.7rem", color: "#64748b" }}>
+                                  {pdf.fecha ? new Date(pdf.fecha).toLocaleDateString() : ""}
+                                </span>
 
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 8,
-              marginTop: 2,
-              minWidth: 0,
-            }}
-          >
-            <button
-              className="pdf-btn-primary"
-              onClick={() => checkMicrographLimit(handleGeneratePdf)}
-              disabled={
-                pdfLoading ||
-                !selectedPdfMuestraId ||
-                !!uploadProgress
-              }
-              style={{
-                opacity:
-                  pdfLoading ||
-                  !selectedPdfMuestraId ||
-                  !!uploadProgress
-                    ? 0.6
-                    : 1,
-                width: "100%",
-                maxWidth: 172,
-                minHeight: 84,
-                justifyContent: "center",
-                borderRadius: 12,
-                padding: "8px 10px",
-                fontSize: "1rem",
-                gap: 0,
-                textAlign: "center",
-                lineHeight: 1.15,
-              }}
-            >
-              <span>
-                GENERAR
-                <br />
-                INFORME
-              </span>
-            </button>
-          </div>
-        </div>
-      </section>
-      </Panel>
+                                {pdf.status === "processing" && (
+                                  <span style={{ fontSize: "0.75rem", color: "#eab308", fontWeight: 600 }}>Procesando...</span>
+                                )}
+                                {pdf.status === "error" && (
+                                  <span style={{ fontSize: "0.75rem", color: "#ef4444", fontWeight: 600 }}>Error</span>
+                                )}
+                                {pdf.status === "pending" && (
+                                  <span style={{ fontSize: "0.75rem", color: "#6b7280", fontWeight: 600 }}>En cola</span>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
+        </Panel>
       )}
 
       {showReports && showAssistant && <ResizeHandle />}

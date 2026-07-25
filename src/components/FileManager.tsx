@@ -6171,7 +6171,7 @@ export default function FileManager({
                     <button
                       onClick={() => setReportConfig(prev => ({ ...prev, custom_text: "" }))}
                       title="Limpiar observaciones"
-                      style={{ position: "absolute", bottom: "8px", right: "16px", background: "transparent", border: "none", cursor: "pointer", color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4 }}
+                      style={{ position: "absolute", bottom: "8px", left: "16px", background: "transparent", border: "none", cursor: "pointer", color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4 }}
                       onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: "#f1f5f9", color: "#64748b" })}
                       onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: "transparent", color: "#94a3b8" })}
                     >
@@ -6205,7 +6205,7 @@ export default function FileManager({
                     <button
                       onClick={() => setReportConfig(prev => ({ ...prev, manual_conclusion: "" }))}
                       title="Limpiar conclusión"
-                      style={{ position: "absolute", bottom: "8px", right: "16px", background: "transparent", border: "none", cursor: "pointer", color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4 }}
+                      style={{ position: "absolute", bottom: "8px", left: "16px", background: "transparent", border: "none", cursor: "pointer", color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4 }}
                       onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: "#f1f5f9", color: "#64748b" })}
                       onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: "transparent", color: "#94a3b8" })}
                     >
@@ -6268,16 +6268,17 @@ export default function FileManager({
                               key={pdf.id || idx}
                               style={{
                                 display: "flex",
-                                flexDirection: "column",
+                                flexDirection: "row",
+                                alignItems: "center",
+                                justifyContent: "space-between",
                                 width: "100%",
-                                gap: 2,
+                                gap: 10,
                                 fontSize: "0.82rem",
                                 color: "#10243f",
                                 background: "white",
-                                padding: "8px 10px",
-                                borderRadius: 10,
+                                padding: "6px 10px",
+                                borderRadius: 8,
                                 border: "1px solid rgba(16,36,63,0.09)",
-                                minHeight: REPORT_HISTORY_ITEM_HEIGHT,
                               }}
                             >
                               <span
@@ -6286,28 +6287,16 @@ export default function FileManager({
                                   overflow: "hidden",
                                   textOverflow: "ellipsis",
                                   whiteSpace: "nowrap",
-                                  width: "100%",
+                                  flex: 1,
                                   textAlign: "left",
                                 }}
                               >
                                 {pdf.value || `Informe_ID_${pdf.id}`}.pdf
                               </span>
                               
-                              <div style={{ display: "flex", gap: "8px", alignItems: "center", justifyContent: "space-between" }}>
-                                <span style={{ fontSize: "0.7rem", color: "#64748b" }}>
-                                  {pdf.fecha ? new Date(pdf.fecha).toLocaleDateString() : ""}
-                                </span>
-
-                                {pdf.status === "processing" && (
-                                  <span style={{ fontSize: "0.75rem", color: "#eab308", fontWeight: 600 }}>Procesando...</span>
-                                )}
-                                {pdf.status === "error" && (
-                                  <span style={{ fontSize: "0.75rem", color: "#ef4444", fontWeight: 600 }}>Error</span>
-                                )}
-                                {pdf.status === "pending" && (
-                                  <span style={{ fontSize: "0.75rem", color: "#6b7280", fontWeight: 600 }}>En cola</span>
-                                )}
-                              </div>
+                              <span style={{ fontSize: "0.7rem", color: "#64748b", flexShrink: 0 }}>
+                                {pdf.fecha ? new Date(pdf.fecha).toLocaleDateString() : ""}
+                              </span>
                             </li>
                           ))}
                         </ul>

@@ -6160,7 +6160,6 @@ export default function FileManager({
                         minHeight: "80px",
                         resize: "none",
                         padding: "10px",
-                        paddingRight: "30px",
                         borderRadius: "8px",
                         border: "1px solid #cbd5e0",
                         fontSize: "0.8rem",
@@ -6171,7 +6170,7 @@ export default function FileManager({
                     <button
                       onClick={() => setReportConfig(prev => ({ ...prev, custom_text: "" }))}
                       title="Limpiar observaciones"
-                      style={{ position: "absolute", bottom: "8px", left: "16px", background: "transparent", border: "none", cursor: "pointer", color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4 }}
+                      style={{ position: "absolute", bottom: "4px", left: "4px", background: "#ffffff", border: "1px solid #e2e8f0", cursor: "pointer", color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, zIndex: 10 }}
                       onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: "#f1f5f9", color: "#64748b" })}
                       onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: "transparent", color: "#94a3b8" })}
                     >
@@ -6194,7 +6193,6 @@ export default function FileManager({
                         minHeight: "80px",
                         resize: "none",
                         padding: "10px",
-                        paddingRight: "30px",
                         borderRadius: "8px",
                         border: "1px solid #cbd5e0",
                         fontSize: "0.8rem",
@@ -6205,7 +6203,7 @@ export default function FileManager({
                     <button
                       onClick={() => setReportConfig(prev => ({ ...prev, manual_conclusion: "" }))}
                       title="Limpiar conclusión"
-                      style={{ position: "absolute", bottom: "8px", left: "16px", background: "transparent", border: "none", cursor: "pointer", color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4 }}
+                      style={{ position: "absolute", bottom: "4px", left: "4px", background: "#ffffff", border: "1px solid #e2e8f0", cursor: "pointer", color: "#94a3b8", display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, zIndex: 10 }}
                       onMouseEnter={(e) => Object.assign(e.currentTarget.style, { background: "#f1f5f9", color: "#64748b" })}
                       onMouseLeave={(e) => Object.assign(e.currentTarget.style, { background: "transparent", color: "#94a3b8" })}
                     >

@@ -871,6 +871,7 @@ export interface ReportConfig {
   custom_text: string;
   manual_conclusion: string;
   send_email: boolean;
+  download_pdf?: boolean;
 }
 
 export async function generatePdf(muestraId: number | string, config: ReportConfig) {
@@ -891,14 +892,19 @@ export async function generatePdf(muestraId: number | string, config: ReportConf
   }
 
   const blob = await res.blob();
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `reporte_${muestraId}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  window.URL.revokeObjectURL(url);
+  
+  if (config.download_pdf !== false) {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `reporte_${muestraId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }
+
+  return true;
 }
 
 export async function getReportList(): Promise<any[]> {

@@ -870,6 +870,7 @@ export interface ReportConfig {
   include_histograms: boolean;
   custom_text: string;
   manual_conclusion: string;
+  send_email: boolean;
 }
 
 export async function generatePdf(muestraId: number | string, config: ReportConfig) {
@@ -881,7 +882,7 @@ export async function generatePdf(muestraId: number | string, config: ReportConf
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ muestra_id: Number(muestraId), config, operador_nombre: localStorage.getItem("user_fullname") || localStorage.getItem("username") || "Operador" }),
+    body: JSON.stringify({ muestra_id: Number(muestraId), config, operador_nombre: localStorage.getItem("user_fullname") || localStorage.getItem("username") || "Operador", operador_username: localStorage.getItem("username") || "" }),
   });
 
   if (!res.ok) {

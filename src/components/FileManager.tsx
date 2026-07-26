@@ -3924,6 +3924,7 @@ export default function FileManager({
     include_histograms: true,
     custom_text: "",
     manual_conclusion: "",
+    send_email: false,
   });
   const [calibratingByUrl, setCalibratingByUrl] = useState<Record<string, boolean>>({});
   const [failedCalibrationByUrl, setFailedCalibrationByUrl] = useState<Record<string, boolean>>({});
@@ -6146,6 +6147,15 @@ export default function FileManager({
                   Generar e incluir histogramas
                 </label>
 
+                <label style={{ display: "flex", gap: "8px", alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={reportConfig.send_email}
+                    onChange={(e) => setReportConfig(prev => ({ ...prev, send_email: e.target.checked }))}
+                  />
+                  Enviar por correo electrónico
+                </label>
+                
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: 1 }}>
                   <label style={{ fontWeight: 600, color: "#4d6684" }}>Observaciones</label>
                   <div style={{ position: "relative", flex: 1, display: "flex" }}>

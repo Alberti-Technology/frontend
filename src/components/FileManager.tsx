@@ -6130,20 +6130,22 @@ export default function FileManager({
                   fontSize: "0.85rem"
                 }}
               >
-                <label style={{ display: "flex", gap: "8px", alignItems: "center", cursor: "pointer" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 500, color: "#2d3748" }}>
                   <input
                     type="checkbox"
                     checked={reportConfig.include_masks}
                     onChange={(e) => setReportConfig(prev => ({ ...prev, include_masks: e.target.checked }))}
+                    style={{ width: "16px", height: "16px", accentColor: "#0284c7" }}
                   />
                   Incluir detección de bordes
                 </label>
                 
-                <label style={{ display: "flex", gap: "8px", alignItems: "center", cursor: "pointer" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 500, color: "#2d3748" }}>
                   <input
                     type="checkbox"
                     checked={reportConfig.include_histograms}
                     onChange={(e) => setReportConfig(prev => ({ ...prev, include_histograms: e.target.checked }))}
+                    style={{ width: "16px", height: "16px", accentColor: "#0284c7" }}
                   />
                   Generar e incluir histogramas
                 </label>

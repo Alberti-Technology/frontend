@@ -5197,6 +5197,7 @@ export default function FileManager({
       setPdfLoading(true);
       pushToast("Generando informe, aguarde...", "info", 5000);
       await api.generatePdf(targetMuestraId, reportConfig);
+      await refreshReportHistory();
       pushToast("Informe generado correctamente.", "success", 3000);
     } catch (err: any) {
       console.error(err);

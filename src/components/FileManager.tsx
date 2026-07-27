@@ -1522,6 +1522,7 @@ export function ImageLightboxCarousel({
   const [maskEditTool, setMaskEditTool] = useState<"pencil" | "eraser" | null>(
     null,
   );
+  const [isAstmMenuOpen, setIsAstmMenuOpen] = useState(false);
   const [isMaskDrawing, setIsMaskDrawing] = useState(false);
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
   const lastMaskPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -1544,10 +1545,7 @@ export function ImageLightboxCarousel({
     (currentImage.id && measurementOverlayById?.[currentImage.id]) || "";
   const isMeasurementOverlayVisible =
     !!measurementOverlayVisibleByUrl?.[currentImage.url];
-  const displayedImageUrl =
-    currentMeasurementOverlayUrl && isMeasurementOverlayVisible
-      ? currentMeasurementOverlayUrl
-      : currentImage.url;
+  const displayedImageUrl = currentImage.url;
   const isMaskVisible =
     !!currentMaskUrl && maskVisibleByImageUrl[currentImage.url] !== false;
   const isMaskLoading = !!maskLoadingByImageUrl[currentImage.url];
@@ -2502,11 +2500,7 @@ export function ImageLightboxCarousel({
             <img
               ref={imgRef}
               src={displayedImageUrl}
-              alt={
-                isMeasurementOverlayVisible
-                  ? `Medicion de ${currentImage.name}`
-                  : currentImage.name
-              }
+              alt={currentImage.name}
               draggable={false}
               onLoad={syncCanvasSize}
               style={{
@@ -2518,6 +2512,26 @@ export function ImageLightboxCarousel({
                 zIndex: showAiFx ? 1 : "auto",
               }}
             />
+            {currentMeasurementOverlayUrl ? (
+              <img
+                src={currentMeasurementOverlayUrl}
+                alt={`Medicion de ${currentImage.name}`}
+                draggable={false}
+                style={{
+                  position: "absolute",
+                  top: showAiFx ? 4 : 0,
+                  left: showAiFx ? 4 : 0,
+                  width: showAiFx ? "calc(100% - 8px)" : "100%",
+                  height: showAiFx ? "calc(100% - 8px)" : "100%",
+                  objectFit: "contain",
+                  borderRadius: 8,
+                  opacity: isMeasurementOverlayVisible ? 1 : 0,
+                  transition: "opacity 600ms cubic-bezier(0.22, 1, 0.36, 1)",
+                  pointerEvents: "none",
+                  zIndex: showAiFx ? 2 : "auto",
+                }}
+              />
+            ) : null}
             {currentMaskUrl && !isMeasurementOverlayVisible ? (
               <img
                 src={currentMaskUrl}
@@ -2964,56 +2978,6 @@ export function ImageLightboxCarousel({
                   </div>
                 )}
               </div>
-              {/* ---- Chart tool ---- */}
-              <button
-                title={
-                  !currentMeasurementOverlayUrl
-                    ? "Gráfico de medición no disponible"
-                    : isMeasurementOverlayVisible
-                      ? "Ocultar gráfico de medición"
-                      : "Ver gráfico de medición"
-                }
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: "50%",
-                  border: "none",
-                  background: isMeasurementOverlayVisible
-                    ? "rgba(51,158,234,0.88)"
-                    : "rgba(0,0,0,0.56)",
-                  color: "white",
-                  cursor: (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible) ? "default" : "pointer",
-                  lineHeight: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  transition: "background 0.15s",
-                  opacity: currentMeasurementOverlayUrl ? ((activeSidebarTool !== "overview" && !isMeasurementOverlayVisible) ? 0.4 : 1) : 0.55,
-                }}
-                disabled={!currentMeasurementOverlayUrl || (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible)}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCheckMicrographLimit(() => {
-                    if (!(microMaterialHasModelByUrl[currentImage.url] ?? true)) {
-                      pushToast("Material no soportado.", "error", 5000);
-                      return;
-                    }
-                    if (currentMeasurementOverlayUrl) {
-                      onToggleMeasurementOverlay?.(currentImage.url);
-                    }
-                  });
-                }}
-                onMouseOver={(e) => {
-                  if (!currentMeasurementOverlayUrl || isMeasurementOverlayVisible || (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible)) return;
-                  e.currentTarget.style.background = "rgba(51,158,234,0.78)";
-                }}
-                onMouseOut={(e) => {
-                  if (!currentMeasurementOverlayUrl || isMeasurementOverlayVisible || (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible)) return;
-                  e.currentTarget.style.background = "rgba(0,0,0,0.56)";
-                }}
-              >
-                <ChartIcon />
-              </button>
               {/* ---- Pencil tool ---- */}
               <button
                 title="Lápiz (pintar negro)"
@@ -3214,6 +3178,113 @@ export function ImageLightboxCarousel({
           </div>
           <div style={{ flexShrink: 0, height: 16, width: "100%" }} />
         </aside>
+        
+        {/* ===== ASTM Menu ===== */}
+        <div 
+          style={{
+            marginTop: 8,
+            width: 62,
+            background: "rgba(0,0,0,0.52)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            backdropFilter: "blur(4px)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.26)",
+            borderRadius: 999,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            padding: "9px 0",
+            gap: 8,
+            overflow: "hidden",
+            height: isAstmMenuOpen ? 114 : 62,
+            transition: "height 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+          }}
+        >
+          {/* ASTM Head */}
+          <button
+            title="Normas ASTM"
+            onClick={() => setIsAstmMenuOpen(!isAstmMenuOpen)}
+            style={{
+              width: 44,
+              height: 44,
+              flexShrink: 0,
+              borderRadius: "50%",
+              border: "none",
+              background: isAstmMenuOpen ? "rgba(51,158,234,0.88)" : "transparent",
+              color: "white",
+              fontWeight: 700,
+              fontSize: 10,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "background 0.15s, color 0.15s",
+            }}
+            onMouseOver={(e) => {
+              if (!isAstmMenuOpen) e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+            }}
+            onMouseOut={(e) => {
+              if (!isAstmMenuOpen) e.currentTarget.style.background = "transparent";
+            }}
+          >
+            ASTM
+          </button>
+
+          {/* E112 Button */}
+          <button
+            title={
+              !currentMeasurementOverlayUrl
+                ? "Gráfico de medición no disponible"
+                : isMeasurementOverlayVisible
+                  ? "Ocultar norma E112"
+                  : "Ver norma E112"
+            }
+            style={{
+              width: 44,
+              height: 44,
+              flexShrink: 0,
+              borderRadius: "50%",
+              border: "none",
+              background: isMeasurementOverlayVisible
+                ? "rgba(51,158,234,0.88)"
+                : "rgba(0,0,0,0.56)",
+              color: "white",
+              cursor: (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible) ? "default" : "pointer",
+              lineHeight: 0,
+              display: "inline-flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 2,
+              transition: "background 0.15s, opacity 0.3s",
+              opacity: isAstmMenuOpen ? (currentMeasurementOverlayUrl ? ((activeSidebarTool !== "overview" && !isMeasurementOverlayVisible) ? 0.4 : 1) : 0.55) : 0,
+              pointerEvents: isAstmMenuOpen ? "auto" : "none",
+            }}
+            disabled={!currentMeasurementOverlayUrl || (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible) || !isAstmMenuOpen}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCheckMicrographLimit(() => {
+                if (!(microMaterialHasModelByUrl[currentImage.url] ?? true)) {
+                  pushToast("Material no soportado.", "error", 5000);
+                  return;
+                }
+                if (currentMeasurementOverlayUrl) {
+                  onToggleMeasurementOverlay?.(currentImage.url);
+                }
+              });
+            }}
+            onMouseOver={(e) => {
+              if (!currentMeasurementOverlayUrl || isMeasurementOverlayVisible || (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible)) return;
+              e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+            }}
+            onMouseOut={(e) => {
+              if (!currentMeasurementOverlayUrl || isMeasurementOverlayVisible || (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible)) return;
+              e.currentTarget.style.background = "rgba(0,0,0,0.56)";
+            }}
+          >
+            <ChartIcon size={14} />
+            <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>E112</span>
+          </button>
+        </div>
       </div>
 
       {/* ===== Right context panel — header/main/footer, 80% height ===== */}

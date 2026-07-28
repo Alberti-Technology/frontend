@@ -908,8 +908,12 @@ export async function generatePdf(muestraId: number | string, config: ReportConf
 }
 
 export async function getReportList(): Promise<any[]> {
-  const res = await apiFetchWithAuth("reports/", {
-    headers: getHeaders(),
+  const username = localStorage.getItem("username") || "";
+  const reportApiUrlRaw = import.meta.env.VITE_REPORT_API_URL || "http://localhost:8001";
+  const reportApiUrl = reportApiUrlRaw.replace(/\/+$/, "");
+
+  const res = await fetch(`${reportApiUrl}/api/reports/list?username=${username}`, {
+    method: "GET"
   });
   if (!res.ok) throw new Error("Error fetching report list");
   return res.json();

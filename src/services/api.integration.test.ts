@@ -18,7 +18,7 @@ describe('Integración de Modelos - Servidor VPS (Metalografía)', () => {
     const formData = new FormData();
     formData.append('file', blob, 'acero.jpg');
 
-    const endpoint = 'https://dlalberti.duckdns.org:7860/segment/45951/rgb/';
+    const endpoint = import.meta.env.VITE_HF_MASK_ENDPOINT;
 
     // 2. Realizar la petición real al backend de Hugging Face
     const response = await fetch(endpoint, {

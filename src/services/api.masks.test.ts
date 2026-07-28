@@ -100,7 +100,7 @@ describe('API - Máscaras', () => {
       expect(result.url).toBe('http://test.hf/mask.png');
       
       const hfCallArgs = mockFetch.mock.calls[1];
-      expect(hfCallArgs[0]).toContain('https://dlalberti.duckdns.org:7860/segment/45951/rgb/');
+      expect(hfCallArgs[0]).toContain(import.meta.env.VITE_HF_MASK_ENDPOINT);
       expect(hfCallArgs[1].method).toBe('POST');
     });
   });

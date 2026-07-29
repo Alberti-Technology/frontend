@@ -891,20 +891,8 @@ export async function generatePdf(muestraId: number | string, config: ReportConf
     throw buildApiError(res, payload, "Error generando PDF desde Report API");
   }
 
-  const blob = await res.blob();
-  
-  if (config.download_pdf !== false) {
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `reporte_${muestraId}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  }
-
-  return true;
+  const data = await res.json();
+  return data;
 }
 
 export async function getReportList(): Promise<any[]> {
@@ -916,6 +904,17 @@ export async function getReportList(): Promise<any[]> {
     method: "GET"
   });
   if (!res.ok) throw new Error("Error fetching report list");
+  return res.json();
+}
+
+export async function trackReportStatus(reportId: string | number): Promise<any> {
+  const reportApiUrlRaw = import.meta.env.VITE_REPORT_API_URL || "http://localhost:8001";
+  const reportApiUrl = reportApiUrlRaw.replace(/\/+$/, "");
+
+  const res = await fetch(`${reportApiUrl}/api/reports/track/${reportId}`, {
+    method: "GET"
+  });
+  if (!res.ok) throw new Error("Error fetching report tracking status");
   return res.json();
 }
 

@@ -1418,6 +1418,7 @@ export function ImageLightboxCarousel({
   inclusionsLoadingByImageUrl?: Record<string, boolean>;
   onDetectInclusiones?: (imageUrl: string) => Promise<void>;
 }) {
+  const [showReportLegendModal, setShowReportLegendModal] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [inclusionsThreshold, setInclusionsThreshold] = useState<number>(0.1);
   const [calibrationMode, setCalibrationMode] = useState(false);
@@ -3947,6 +3948,7 @@ export default function FileManager({
 
   const [showAdminLegend, setShowAdminLegend] = useState(false);
   const [showGalleryLegend, setShowGalleryLegend] = useState(false);
+  const [showReportLegendModal, setShowReportLegendModal] = useState(false);
 
   const [companyEnabled, setCompanyEnabled] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
@@ -3996,7 +3998,6 @@ export default function FileManager({
     custom_text: "",
     manual_conclusion: "",
     send_email: true,
-    download_pdf: true,
   });
   const [calibratingByUrl, setCalibratingByUrl] = useState<Record<string, boolean>>({});
   const [failedCalibrationByUrl, setFailedCalibrationByUrl] = useState<Record<string, boolean>>({});
@@ -5089,6 +5090,7 @@ export default function FileManager({
   >(null);
   const PDF_SELECTOR_ITEM_HEIGHT = 38;
   const PDF_SELECTOR_ITEM_GAP = 6;
+
   const REPORT_HISTORY_ITEM_HEIGHT = 36;
   const REPORT_HISTORY_ITEM_GAP = 7;
 
@@ -5146,6 +5148,68 @@ export default function FileManager({
   useEffect(() => {
     refreshReportHistory();
   }, [refreshReportHistory]);
+
+  // Poll for report status if any report is in progress
+  useEffect(() => {
+    if (!token || !pdfHistory.length) return;
+
+    const inProgressReports = pdfHistory.filter(
+      (pdf: any) => pdf.status === "processing" || (pdf.job && (pdf.job.status === "queued" || pdf.job.status === "running"))
+    );
+
+    if (inProgressReports.length === 0) return;
+
+    let isPolling = false;
+    const intervalId = setInterval(async () => {
+      if (isPolling) return;
+      isPolling = true;
+      let updated = false;
+      const newHistory = [...pdfHistory];
+      
+      for (const report of inProgressReports) {
+        try {
+          const res = await api.trackReportStatus(report.id);
+          const idx = newHistory.findIndex((r: any) => r.id === report.id);
+          if (idx !== -1) {
+            // Check if status changed
+            if (JSON.stringify(newHistory[idx].job) !== JSON.stringify(res.job) || newHistory[idx].status !== res.status) {
+              newHistory[idx] = res;
+              updated = true;
+              
+              if (res.status === "completed" || (res.job && res.job.status === "completed")) {
+                pushToast("Informe generado correctamente.", "success", 3000);
+              } else if (res.status === "failed" || (res.job && res.job.status === "failed")) {
+                pushToast(`Error al generar informe: ${res.job?.last_error || 'Error desconocido'}`, "error", 8000);
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Error polling report status", e);
+        }
+      }
+      
+      if (updated) {
+        setPdfHistory((prev) => {
+          const next = [...prev];
+          for (const report of inProgressReports) {
+            const freshIdx = next.findIndex((r: any) => r.id === report.id);
+            if (freshIdx !== -1) {
+              const matchingNew = newHistory.find((r: any) => r.id === report.id);
+              if (matchingNew) {
+                next[freshIdx] = matchingNew;
+              }
+            }
+          }
+          return next;
+        });
+      }
+      isPolling = false;
+    }, 500);
+
+    return () => clearInterval(intervalId);
+  }, [token, pdfHistory, pushToast]);
+
+
 
   useEffect(() => {
     const handleReportStatus = (e: Event) => {
@@ -5266,10 +5330,9 @@ export default function FileManager({
 
     try {
       setPdfLoading(true);
-      pushToast("Generando informe, aguarde...", "info", 5000);
-      await api.generatePdf(targetMuestraId, reportConfig);
+      pushToast("Generación iniciada...", "info", 3000);
+      const data = await api.generatePdf(targetMuestraId, reportConfig);
       await refreshReportHistory();
-      pushToast("Informe generado correctamente.", "success", 3000);
     } catch (err: any) {
       console.error(err);
       pushToast(`Error: ${err.message}`, "error", 5000);
@@ -6176,10 +6239,17 @@ export default function FileManager({
             }}
           >
             <div
-              className="px-4 py-2.5 border-b border-[#10243f1a] flex items-center"
+              className="px-4 py-2.5 border-b border-[#10243f1a] flex items-center gap-2"
               style={{ flexShrink: 0 }}
             >
               <h3 className="text-base font-bold text-[#10243f] m-0">Informes</h3>
+              <button 
+                onClick={(e) => { e.stopPropagation(); setShowReportLegendModal(true); }}
+                className="flex items-center justify-center w-6 h-6 rounded-lg bg-transparent border-none text-[#339eea] cursor-pointer transition-all hover:bg-[#eef8ff] hover:-translate-y-0.5"
+                title="Leyenda de estados"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              </button>
             </div>
 
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: 14 }}>
@@ -6220,14 +6290,7 @@ export default function FileManager({
                   Generar e incluir histogramas
                 </label>
 
-                <label style={{ display: "flex", gap: "8px", alignItems: "center", cursor: "pointer", fontWeight: 500, color: "#2d3748" }}>
-                  <input
-                    type="checkbox"
-                    checked={reportConfig.download_pdf}
-                    onChange={(e) => setReportConfig(prev => ({ ...prev, download_pdf: e.target.checked }))}
-                  />
-                  Descargar al terminar
-                </label>
+
                 
                 <label style={{ display: "flex", gap: "8px", alignItems: "center", cursor: "pointer", fontWeight: 500, color: "#2d3748" }}>
                   <input
@@ -6305,8 +6368,10 @@ export default function FileManager({
                 </div>
               </div>
 
-              <div style={{ fontSize: "0.84rem", fontWeight: 700, color: "#4d6684", marginBottom: 10, marginTop: 14 }}>
-                Historial
+              <div className="flex items-center gap-2" style={{ marginBottom: 10, marginTop: 14 }}>
+                <div style={{ fontSize: "0.84rem", fontWeight: 700, color: "#4d6684" }}>
+                  Historial
+                </div>
               </div>
 
               <div
@@ -6353,43 +6418,85 @@ export default function FileManager({
                             gap: REPORT_HISTORY_ITEM_GAP,
                           }}
                         >
-                          {pdfHistory.map((pdf, idx) => (
-                            <li
-                              key={pdf.id || idx}
-                              style={{
-                                display: "flex",
-                                flexDirection: "row",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                width: "100%",
-                                gap: 10,
-                                fontSize: "0.82rem",
-                                color: "#10243f",
-                                background: "white",
-                                padding: "6px 10px",
-                                borderRadius: 8,
-                                border: "1px solid rgba(16,36,63,0.09)",
-                              }}
-                            >
-                              <span
+                          {pdfHistory.map((pdf, idx) => {
+                            const isFinished = pdf.status === "completed" || pdf.status === "failed" || (pdf.job && (pdf.job.status === "completed" || pdf.job.status === "failed"));
+                            const isSuccess = pdf.status === "completed" || (pdf.job && pdf.job.status === "completed");
+                            const isFailed = pdf.status === "failed" || (pdf.job && pdf.job.status === "failed");
+                            
+                            const innerContent = (
+                              <li
                                 style={{
-                                  fontWeight: 600,
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                  flex: 1,
-                                  textAlign: "left",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  width: "100%",
+                                  gap: 8,
+                                  fontSize: "0.82rem",
+                                  color: "#10243f",
+                                  background: "white",
+                                  padding: "10px 12px",
+                                  borderRadius: 8,
+                                  border: "1px solid rgba(16,36,63,0.09)",
                                 }}
                               >
-                                {pdf.value || `Informe_ID_${pdf.id}`}.pdf
-                              </span>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: 10 }}>
+                                <span
+                                  style={{
+                                    fontWeight: 600,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                    flex: 1,
+                                    textAlign: "left",
+                                  }}
+                                >
+                                  {pdf.value || `Informe_ID_${pdf.id}`}.pdf
+                                </span>
+                                
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                                  <span style={{ fontSize: "0.7rem", color: "#64748b" }}>
+                                    {pdf.fecha ? `${new Date(pdf.fecha).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })} - ${new Date(pdf.fecha).toLocaleTimeString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: '2-digit', minute: '2-digit', hour12: false })}` : ""}
+                                  </span>
+                                  {isFinished && isSuccess && (
+                                    <span title="Completado" style={{ display: "flex" }}>
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                      </svg>
+                                    </span>
+                                  )}
+                                  {isFinished && isFailed && (
+                                    <span title="Fallido" style={{ display: "flex" }}>
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="15" y1="9" x2="9" y2="15"></line>
+                                        <line x1="9" y1="9" x2="15" y2="15"></line>
+                                      </svg>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                               
-                              <span style={{ fontSize: "0.7rem", color: "#64748b", flexShrink: 0 }}>
-                                {pdf.fecha ? new Date(pdf.fecha).toLocaleDateString() : ""}
-                              </span>
+                              {!isFinished && pdf.job && (
+                                <div style={{ width: "100%", marginTop: "4px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "#3b82f6", fontWeight: 600 }}>
+                                    <span>{pdf.job.stage || "Procesando..."}</span>
+                                    <span>{pdf.job.progress || 0}%</span>
+                                  </div>
+                                  <div style={{ width: "100%", height: "6px", background: "#e2e8f0", borderRadius: "3px", overflow: "hidden" }}>
+                                    <div style={{ width: `${pdf.job.progress || 0}%`, height: "100%", background: "linear-gradient(90deg, #3b82f6, #60a5fa)", borderRadius: "3px", transition: "width 0.3s ease" }}></div>
+                                  </div>
+                                </div>
+                              )}
                             </li>
-                          ))}
-                        </ul>
+                            );
+
+                            return (
+                              <React.Fragment key={pdf.id || idx}>
+                                {innerContent}
+                              </React.Fragment>
+                            );
+                          })}
+</ul>
                       </div>
                     )}
                   </>
@@ -6941,6 +7048,53 @@ export default function FileManager({
       `,
         }}
       />
+      {/* Legend Modal */}
+      {showReportLegendModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+          <div className="absolute inset-0 bg-[#10243f66] backdrop-blur-sm" onClick={() => setShowReportLegendModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-xl border border-[#10243f14] w-[400px] overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-[#f8fbff]">
+              <h3 className="m-0 text-[#10243f] text-lg font-bold">Leyenda Informes</h3>
+              <button onClick={() => setShowReportLegendModal(false)} className="text-gray-400 hover:text-gray-600 bg-transparent border-none cursor-pointer">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+            
+            <div className="p-6 max-h-[60vh] overflow-y-auto">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ display: "flex", padding: "2px", borderRadius: 4, background: "rgba(59, 130, 246, 0.15)", border: "1px solid #3b82f6", color: "#3b82f6", lineHeight: 1 }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                  </span>
+                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>El informe está en proceso.</span>
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ color: '#10b981', padding: '2px 4px', display: 'flex' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                  </span>
+                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Completado exitosamente.</span>
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ color: '#ef4444', padding: '2px 4px', display: 'flex' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="15" y1="9" x2="9" y2="15"></line>
+                      <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                  </span>
+                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Error al generar el informe.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

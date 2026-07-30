@@ -1,0 +1,36 @@
+name: Mirror to Alberti-Technology
+
+on:
+  push:
+    # Este workflow se ejecutará en cada push a cualquier rama.
+    # Si solo quieres que se ejecute en ramas específicas, descomenta lo siguiente:
+    # branches:
+    #   - main
+    #   - dev
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Importante para traer todo el historial de commits
+          
+      - name: Set up SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.TARGET_REPO_SSH_KEY }}
+          
+      - name: Push to target repository
+        run: |
+          # Añadir la huella del servidor de GitHub para evitar prompts
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          
+          # Añadir el remoto destino
+          git remote add target git@github.com:Alberti-Technology/frontend.git
+          
+          # Empujar el ref actual (ya sea rama o tag) al repositorio destino
+          # Usamos --force para asegurar que el repositorio de destino sea una copia exacta
+          git push --force target HEAD:${GITHUB_REF}

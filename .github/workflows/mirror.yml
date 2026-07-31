@@ -1,12 +1,8 @@
-name: Mirror to Alberti-Technology
+name: Mirror to Personal Repository
 
 on:
   push:
     # Este workflow se ejecutará en cada push a cualquier rama.
-    # Si solo quieres que se ejecute en ramas específicas, descomenta lo siguiente:
-    # branches:
-    #   - main
-    #   - dev
 
 jobs:
   mirror:
@@ -28,9 +24,8 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan github.com >> ~/.ssh/known_hosts
           
-          # Añadir el remoto destino
-          git remote add target git@github.com:Alberti-Technology/frontend.git
+          # Añadir el remoto destino (el personal de diego-martucho)
+          git remote add target git@github.com:diego-martucho/mia-altech-frontend.git
           
           # Empujar el ref actual (ya sea rama o tag) al repositorio destino
-          # Usamos --force para asegurar que el repositorio de destino sea una copia exacta
           git push --force target HEAD:${GITHUB_REF}

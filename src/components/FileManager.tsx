@@ -3236,6 +3236,8 @@ export function ImageLightboxCarousel({
                     setIsPencilMenuOpen(prev => {
                       const next = !prev;
                       if (next) {
+                        setIsZoomMenuOpen(false);
+                        setIsNavMenuOpen(false);
                         setActiveSidebarTool("mask");
                         setMaskEditTool("pencil");
                       } else {
@@ -3593,7 +3595,17 @@ export function ImageLightboxCarousel({
           {/* Zoom Head */}
           <button
             title="Zoom"
-            onClick={() => setIsZoomMenuOpen(!isZoomMenuOpen)}
+            onClick={() => {
+              const next = !isZoomMenuOpen;
+              setIsZoomMenuOpen(next);
+              if (next) {
+                setIsPencilMenuOpen(false);
+                setMaskEditTool(null);
+                if (activeSidebarTool === "mask") {
+                  setActiveSidebarTool("overview");
+                }
+              }
+            }}
             style={{
               width: 44,
               height: 44,
@@ -3701,7 +3713,17 @@ export function ImageLightboxCarousel({
           {/* Nav Head */}
           <button
             title="Navegación"
-            onClick={() => setIsNavMenuOpen(!isNavMenuOpen)}
+            onClick={() => {
+              const next = !isNavMenuOpen;
+              setIsNavMenuOpen(next);
+              if (next) {
+                setIsPencilMenuOpen(false);
+                setMaskEditTool(null);
+                if (activeSidebarTool === "mask") {
+                  setActiveSidebarTool("overview");
+                }
+              }
+            }}
             style={{
               width: 44,
               height: 44,

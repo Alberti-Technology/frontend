@@ -147,8 +147,39 @@ function normalizeId(value: unknown): string | null {
 }
 
 
-function readDrawCacheStore(): Record<string, string> {
+const MEASUREMENTS_STORAGE_KEY = "measurement_cache_v1_by_image_url";
+
+export interface StoredMeasurement {
+  id: string;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  distancePx: number;
+  distanceUm: number | null;
+  color: string;
+}
+
+function readMeasurementsCacheStore(): Record<string, StoredMeasurement[]> {
   if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(MEASUREMENTS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, StoredMeasurement[]>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeMeasurementsCacheStore(store: Record<string, StoredMeasurement[]>): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    localStorage.setItem(MEASUREMENTS_STORAGE_KEY, JSON.stringify(store));
+    return true;
+  } catch (e) {
+    console.warn("[measurements cache] localStorage quota exceeded, skipping cache write.", e);
+    return false;
+  }
+}
+
+function readDrawCacheStore(): Record<string, string> {
   try {
     const raw = localStorage.getItem(DRAWINGS_STORAGE_KEY);
     return raw ? (JSON.parse(raw) as Record<string, string>) : {};
@@ -1501,24 +1532,35 @@ export function ImageLightboxCarousel({
   }, []);
 
   // Persistent measurements
-  interface StoredMeasurement {
-    id: string;
-    start: { x: number; y: number };
-    end: { x: number; y: number };
-    distancePx: number;
-    distanceUm: number | null;
-    color: string;
-  }
   const MEASUREMENT_COLORS = ["#ff3333", "#33cc33", "#3399ff", "#ff9900", "#cc33ff", "#00cccc", "#ff6699", "#99cc00"];
-  const [measurements, setMeasurements] = useState<StoredMeasurement[]>([]);
-  const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
+  
+  const [measurementsByImageUrl, setMeasurementsByImageUrl] = useState<Record<string, StoredMeasurement[]>>({});
+  
+  useEffect(() => {
+    setMeasurementsByImageUrl(readMeasurementsCacheStore());
+  }, []);
 
+  const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
+  const [hoveredMeasurementId, setHoveredMeasurementId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inclusionsCanvasRef = useRef<HTMLCanvasElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
   const currentImage = images[currentIndex];
+  const measurements = measurementsByImageUrl[currentImage?.url] || [];
+  
+  const setMeasurements = useCallback((updater: React.SetStateAction<StoredMeasurement[]>) => {
+    setMeasurementsByImageUrl(prev => {
+      const url = currentImage?.url;
+      if (!url) return prev;
+      const currentList = prev[url] || [];
+      const newList = typeof updater === "function" ? updater(currentList) : updater;
+      const newMap = { ...prev, [url]: newList };
+      writeMeasurementsCacheStore(newMap);
+      return newMap;
+    });
+  }, [currentImage?.url]);
 
   useEffect(() => {
     const canvas = inclusionsCanvasRef.current;
@@ -1570,6 +1612,10 @@ export function ImageLightboxCarousel({
     null,
   );
   const [isAstmMenuOpen, setIsAstmMenuOpen] = useState(false);
+  const [isZoomMenuOpen, setIsZoomMenuOpen] = useState(false);
+  const [isNavMenuOpen, setIsNavMenuOpen] = useState(false);
+  const [showMeasurements, setShowMeasurements] = useState(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const [isMaskDrawing, setIsMaskDrawing] = useState(false);
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
   const lastMaskPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -1640,7 +1686,7 @@ export function ImageLightboxCarousel({
   else if (aiProcessing) aiFxColor = "#e8a317"; // yellow
 
   const LIGHTBOX_SIDE_MIN = 40;
-  const MIN_CONTEXT_WIDTH = 280;
+  const MIN_CONTEXT_WIDTH = 480;
   const borderPad = showAiFx ? 8 : 0; // reserve space for the animated border
   const imageMaxWidth = Math.max(
     260,
@@ -1774,9 +1820,6 @@ export function ImageLightboxCarousel({
     setShowConfirmModal(false);
     setShowInputModal(false);
     setShowAutoDetectModal(false);
-    setShowAutoDetectModal(false);
-    setMaskEditTool(null);
-    setIsMaskDrawing(false);
     if (goToOverview) {
       setActiveSidebarTool("overview");
     }
@@ -1853,9 +1896,9 @@ export function ImageLightboxCarousel({
     };
   }, [currentIndex, syncEditorLayout]);
 
-  // Draw the line on canvas
-  const drawLine = useCallback(
-    (start: { x: number; y: number }, end: { x: number; y: number }, activeColor?: string) => {
+  // Draw measurements and active line on canvas
+  const drawMeasurementsAndLine = useCallback(
+    (start?: { x: number; y: number } | null, end?: { x: number; y: number } | null, activeColor?: string) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
@@ -1867,17 +1910,23 @@ export function ImageLightboxCarousel({
       const displayLineWidthPx = 4;
       const displayPointRadiusPx = 6;
 
+      if (!showMeasurements && activeSidebarTool !== "measurement") {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        return;
+      }
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // Draw stored measurements first
-      for (const m of measurements) {
+      measurements.forEach((m, i) => {
+        const isActive = m.id === selectedMeasurementId || m.id === hoveredMeasurementId;
         ctx.beginPath();
         ctx.moveTo(m.start.x, m.start.y);
         ctx.lineTo(m.end.x, m.end.y);
         ctx.strokeStyle = m.color;
-        ctx.lineWidth = (m.id === selectedMeasurementId ? 4 : 3) * scale;
+        ctx.lineWidth = (isActive ? 4 : 3) * scale;
         ctx.lineCap = "round";
-        ctx.globalAlpha = m.id === selectedMeasurementId ? 1 : 0.7;
+        ctx.globalAlpha = isActive ? 1 : 0.7;
         ctx.stroke();
         ctx.globalAlpha = 1;
         // Endpoints
@@ -1887,18 +1936,42 @@ export function ImageLightboxCarousel({
           ctx.fillStyle = m.color;
           ctx.fill();
         }
-      }
+        
+        // Hover label
+        if (m.id === hoveredMeasurementId) {
+          const mx = (m.start.x + m.end.x) / 2;
+          const my = (m.start.y + m.end.y) / 2;
+          const label = `#${i + 1}`;
+          
+          ctx.font = `bold ${14 * scale}px Inter, sans-serif`;
+          const textMetrics = ctx.measureText(label);
+          const bgWidth = textMetrics.width + 12 * scale;
+          const bgHeight = 22 * scale;
+          
+          ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+          ctx.beginPath();
+          ctx.roundRect(mx - bgWidth / 2, my - bgHeight / 2 - 15 * scale, bgWidth, bgHeight, 6 * scale);
+          ctx.fill();
+          
+          ctx.fillStyle = "white";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(label, mx, my - 15 * scale);
+        }
+      });
 
       // Draw the active line
-      ctx.beginPath();
-      ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y);
-      ctx.strokeStyle = activeColor || "#ff3333";
-      ctx.lineWidth = displayLineWidthPx * scale;
-      ctx.lineCap = "round";
-      ctx.stroke();
+      if (start && end) {
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(end.x, end.y);
+        ctx.strokeStyle = activeColor || "#ff3333";
+        ctx.lineWidth = displayLineWidthPx * scale;
+        ctx.lineCap = "round";
+        ctx.stroke();
+      }
     },
-    [measurements, selectedMeasurementId],
+    [measurements, selectedMeasurementId, hoveredMeasurementId, showMeasurements, activeSidebarTool],
   );
 
   // Draw AI calibration box — scale vertices from source image space to canvas space
@@ -1936,7 +2009,9 @@ export function ImageLightboxCarousel({
     if (!currentImage) return;
     const data = calibrationData[currentImage.url];
     // Only draw it if we're not currently doing manual calibration/measure and if it's AI
-    if (data?.vertices && data.isAi && showAiFx) {
+    if ((showMeasurements || activeSidebarTool === "measurement") && !isMeasuring) {
+      drawMeasurementsAndLine();
+    } else if (data?.vertices && data.isAi && showAiFx) {
       drawVertices(data.vertices, data.sourceWidth, data.sourceHeight);
     } else {
       const canvas = canvasRef.current;
@@ -1945,7 +2020,7 @@ export function ImageLightboxCarousel({
         if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
     }
-  }, [currentIndex, calibrationData, drawVertices, images, showAiFx, canvasLayoutCounter]);
+  }, [currentIndex, calibrationData, drawVertices, images, showAiFx, canvasLayoutCounter, activeSidebarTool, showMeasurements, measurements, hoveredMeasurementId, selectedMeasurementId, drawMeasurementsAndLine, isMeasuring]);
 
   // Get position relative to the canvas (which matches natural image coords)
   const getCanvasPos = (
@@ -1976,7 +2051,7 @@ export function ImageLightboxCarousel({
     const pos = getCanvasPos(e);
     if (!pos) return;
     setLineEnd(pos);
-    drawLine(lineStart, pos);
+    drawMeasurementsAndLine(lineStart, pos);
   };
 
   const handleCanvasMouseUp = () => {
@@ -2010,16 +2085,39 @@ export function ImageLightboxCarousel({
   };
 
   const handleMeasurementMouseMove = (e: React.MouseEvent) => {
-    if (!measurementMode || !isMeasuring || !measurementStart) return;
+    if (!measurementMode) return;
     const pos = getCanvasPos(e);
     if (!pos) return;
-    setMeasurementEnd(pos);
-    const dx = pos.x - measurementStart.x;
-    const dy = pos.y - measurementStart.y;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    setMeasurementPx(len);
-    drawLine(measurementStart, pos);
-    setMeasurementLabelPos({ x: e.clientX, y: e.clientY });
+    
+    if (isMeasuring && measurementStart) {
+      setMeasurementEnd(pos);
+      const dx = pos.x - measurementStart.x;
+      const dy = pos.y - measurementStart.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      setMeasurementPx(len);
+      drawMeasurementsAndLine(measurementStart, pos);
+      setMeasurementLabelPos({ x: e.clientX, y: e.clientY });
+    } else {
+      let foundHover: string | null = null;
+      for (const m of measurements) {
+        const l2 = (m.end.x - m.start.x) ** 2 + (m.end.y - m.start.y) ** 2;
+        if (l2 === 0) continue;
+        const t = Math.max(0, Math.min(1, ((pos.x - m.start.x) * (m.end.x - m.start.x) + (pos.y - m.start.y) * (m.end.y - m.start.y)) / l2));
+        const proj = { x: m.start.x + t * (m.end.x - m.start.x), y: m.start.y + t * (m.end.y - m.start.y) };
+        const dist = Math.sqrt((pos.x - proj.x) ** 2 + (pos.y - proj.y) ** 2);
+        
+        const rect = canvasRef.current?.getBoundingClientRect();
+        const scaleX = rect && rect.width > 0 ? canvasRef.current!.width / rect.width : 1;
+        
+        if (dist < 8 * scaleX) {
+          foundHover = m.id;
+          break;
+        }
+      }
+      if (foundHover !== hoveredMeasurementId) {
+        setHoveredMeasurementId(foundHover);
+      }
+    }
   };
 
   const handleMeasurementMouseUp = () => {
@@ -2118,14 +2216,18 @@ export function ImageLightboxCarousel({
 
   const handleActivateMeasurement = () => {
     if (!currentImageIsCalibrable || !measurementEnabled) return;
-    if (activeSidebarTool === "measurement") {
-      resetMeasurementState();
-      setActiveSidebarTool("overview");
-      return;
+    if (showMeasurements) {
+      setShowMeasurements(false);
+      if (activeSidebarTool === "measurement") {
+        resetMeasurementState();
+        setActiveSidebarTool("overview");
+      }
+    } else {
+      resetCalibrationState(false);
+      setShowMeasurements(true);
+      setActiveSidebarTool("measurement");
+      setTimeout(syncCanvasSize, 50);
     }
-    resetCalibrationState(false);
-    setActiveSidebarTool("measurement");
-    setTimeout(syncCanvasSize, 50);
   };
 
   const handleAutoDetectCancel = () => {
@@ -2436,7 +2538,7 @@ export function ImageLightboxCarousel({
         background: "rgba(0,0,0,0.92)",
         backdropFilter: "blur(8px)",
         display: "grid",
-        gridTemplateColumns: "100px 1fr 300px",
+        gridTemplateColumns: "100px 1fr 480px",
         gridTemplateRows: "100%",
         alignItems: "center",
         justifyItems: "center",
@@ -2456,29 +2558,7 @@ export function ImageLightboxCarousel({
           alignItems: "center",
         }}
       >
-        {/* Close button */}
-        <button
-          title="Cerrar"
-          style={{
-            background: "rgba(0,0,0,0.5)",
-            border: "none",
-            borderRadius: "50%",
-            padding: 8,
-            cursor: "pointer",
-            color: "white",
-            lineHeight: 0,
-            transition: "background 0.15s",
-          }}
-          onClick={onClose}
-          onMouseOver={(e) =>
-            (e.currentTarget.style.background = "rgba(0,0,0,0.8)")
-          }
-          onMouseOut={(e) =>
-            (e.currentTarget.style.background = "rgba(0,0,0,0.5)")
-          }
-        >
-          <CloseIcon />
-        </button>
+        {/* Close button moved to navigation section */}
       </div>
 
       {/* ===== Image centered in grid column 2 ===== */}
@@ -2498,6 +2578,7 @@ export function ImageLightboxCarousel({
       >
         <div
           ref={imageContainerRef}
+          onDoubleClick={(e) => { e.stopPropagation(); resetZoom(); }}
           onWheel={(e) => {
             if (e.ctrlKey || e.metaKey) return; // allow native browser zoom
             // e.preventDefault() cannot be called reliably on React passive wheel events, but we can manage state
@@ -2741,31 +2822,6 @@ export function ImageLightboxCarousel({
                   }
                 }}
               />
-            {/* Old pill removed */}
-            {measurementMode &&
-              measurementLabelPos &&
-              measurementDistanceUm !== null && (
-                <div
-                  style={{
-                    position: "fixed",
-                    left: measurementLabelPos.x + 12,
-                    top: measurementLabelPos.y - 28,
-                    padding: "4px 8px",
-                    borderRadius: 8,
-                    background: "rgba(0,0,0,0.72)",
-                    color: "white",
-                    fontSize: "0.78rem",
-                    fontWeight: 700,
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    boxShadow: "0 6px 14px rgba(0,0,0,0.25)",
-                    pointerEvents: "none",
-                    zIndex: 5,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {measurementDistanceUm.toFixed(2)} µm
-                </div>
-              )}
             {hoveredInclusion && (
               <div
                 style={{
@@ -2796,6 +2852,31 @@ export function ImageLightboxCarousel({
           </div>
         </div>
       </div>
+
+      {measurementMode &&
+        measurementLabelPos &&
+        measurementDistanceUm !== null && (
+          <div
+            style={{
+              position: "fixed",
+              left: measurementLabelPos.x + 12,
+              top: measurementLabelPos.y - 28,
+              padding: "4px 8px",
+              borderRadius: 8,
+              background: "rgba(0,0,0,0.72)",
+              color: "white",
+              fontSize: "0.78rem",
+              fontWeight: 700,
+              border: "1px solid rgba(255,255,255,0.2)",
+              boxShadow: "0 6px 14px rgba(0,0,0,0.25)",
+              pointerEvents: "none",
+              zIndex: 9999,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {measurementDistanceUm.toFixed(2)} µm
+          </div>
+        )}
 
       {/* ===== Left Action Toolbar (conditionally renders tools/calibration) ===== */}
       <div
@@ -2931,7 +3012,7 @@ export function ImageLightboxCarousel({
                   borderRadius: "50%",
                   border: "none",
                   background:
-                    activeSidebarTool === "measurement"
+                    showMeasurements || activeSidebarTool === "measurement"
                       ? "rgba(51,158,234,0.88)"
                       : "rgba(0,0,0,0.56)",
                   color: "white",
@@ -3152,13 +3233,16 @@ export function ImageLightboxCarousel({
                   }}
                   disabled={isMeasurementOverlayVisible}
                   onClick={() => onCheckMicrographLimit(() => {
-                    setActiveSidebarTool("mask");
                     setIsPencilMenuOpen(prev => {
                       const next = !prev;
                       if (next) {
+                        setActiveSidebarTool("mask");
                         setMaskEditTool("pencil");
                       } else {
                         setMaskEditTool(null);
+                        if (activeSidebarTool === "mask") {
+                          setActiveSidebarTool("overview");
+                        }
                       }
                       return next;
                     });
@@ -3487,7 +3571,7 @@ export function ImageLightboxCarousel({
           </button>
         </div>
 
-        {/* ===== Zoom UI ===== */}
+        {/* ===== Zoom Menu ===== */}
         <div 
           style={{
             width: 62,
@@ -3500,60 +3584,102 @@ export function ImageLightboxCarousel({
             flexDirection: "column",
             alignItems: "center",
             padding: "9px 0",
-            gap: 6,
+            gap: 8,
+            overflow: "hidden",
+            height: isZoomMenuOpen ? 200 : 62,
+            transition: "height 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         >
+          {/* Zoom Head */}
           <button
-            type="button"
-            title="Acercar (Zoom In)"
-            onMouseDown={(e) => { e.stopPropagation(); startContinuousZoom("in"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
-            onMouseUp={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
-            onMouseLeave={(e) => { stopContinuousZoom(); e.currentTarget.style.background = "rgba(0,0,0,0.56)"; }}
-            onTouchStart={(e) => { e.stopPropagation(); startContinuousZoom("in"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
-            onTouchEnd={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+            title="Zoom"
+            onClick={() => setIsZoomMenuOpen(!isZoomMenuOpen)}
             style={{
-              width: 44, height: 44, borderRadius: "50%", border: "none",
-              background: "rgba(0,0,0,0.56)", color: "white", cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "background 0.15s",
+              width: 44,
+              height: 44,
+              flexShrink: 0,
+              borderRadius: "50%",
+              border: "none",
+              background: isZoomMenuOpen ? "rgba(51,158,234,0.88)" : "transparent",
+              color: "white",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "background 0.15s, color 0.15s",
             }}
-            onMouseOver={(e) => { e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+            onMouseOver={(e) => {
+              if (!isZoomMenuOpen) e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+            }}
+            onMouseOut={(e) => {
+              if (!isZoomMenuOpen) e.currentTarget.style.background = "transparent";
+            }}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           </button>
-          
-          <div 
-            title="Restablecer Zoom"
-            onClick={(e) => { e.stopPropagation(); resetZoom(); }}
-            style={{ 
-              fontSize: "0.6rem", fontWeight: 700, color: "white", cursor: "pointer", 
-              padding: "4px", background: "rgba(255,255,255,0.1)", borderRadius: 4 
-            }}
-          >
-            {Math.round(zoomScale * 100)}%
-          </div>
 
-          <button
-            type="button"
-            title="Alejar (Zoom Out)"
-            onMouseDown={(e) => { e.stopPropagation(); startContinuousZoom("out"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
-            onMouseUp={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
-            onMouseLeave={(e) => { stopContinuousZoom(); e.currentTarget.style.background = "rgba(0,0,0,0.56)"; }}
-            onTouchStart={(e) => { e.stopPropagation(); startContinuousZoom("out"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
-            onTouchEnd={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
-            style={{
-              width: 44, height: 44, borderRadius: "50%", border: "none",
-              background: "rgba(0,0,0,0.56)", color: "white", cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "background 0.15s",
-            }}
-            onMouseOver={(e) => { e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
-          </button>
+          {/* Zoom Controls */}
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 8,
+            opacity: isZoomMenuOpen ? 1 : 0,
+            pointerEvents: isZoomMenuOpen ? "auto" : "none",
+            transition: "opacity 0.3s",
+          }}>
+            <button
+              type="button"
+              title="Acercar (Zoom In)"
+              onMouseDown={(e) => { e.stopPropagation(); startContinuousZoom("in"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+              onMouseUp={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+              onMouseLeave={(e) => { stopContinuousZoom(); e.currentTarget.style.background = "rgba(0,0,0,0.56)"; }}
+              onTouchStart={(e) => { e.stopPropagation(); startContinuousZoom("in"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+              onTouchEnd={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+              style={{
+                width: 44, height: 44, borderRadius: "50%", border: "none",
+                background: "rgba(0,0,0,0.56)", color: "white", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "background 0.15s",
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+            
+            <div 
+              title="Restablecer Zoom"
+              onClick={(e) => { e.stopPropagation(); resetZoom(); }}
+              style={{ 
+                fontSize: "0.6rem", fontWeight: 700, color: "white", cursor: "pointer", 
+                padding: "4px", background: "rgba(255,255,255,0.1)", borderRadius: 4 
+              }}
+            >
+              {Math.round(zoomScale * 100)}%
+            </div>
+
+            <button
+              type="button"
+              title="Alejar (Zoom Out)"
+              onMouseDown={(e) => { e.stopPropagation(); startContinuousZoom("out"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+              onMouseUp={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+              onMouseLeave={(e) => { stopContinuousZoom(); e.currentTarget.style.background = "rgba(0,0,0,0.56)"; }}
+              onTouchStart={(e) => { e.stopPropagation(); startContinuousZoom("out"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+              onTouchEnd={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+              style={{
+                width: 44, height: 44, borderRadius: "50%", border: "none",
+                background: "rgba(0,0,0,0.56)", color: "white", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "background 0.15s",
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+          </div>
         </div>
 
-        {/* ===== Arrow Navigation ===== */}
+        {/* ===== Nav Menu ===== */}
         <div
           style={{
             width: 62,
@@ -3566,9 +3692,57 @@ export function ImageLightboxCarousel({
             flexDirection: "column",
             alignItems: "center",
             padding: "9px 0",
-            gap: 10,
+            gap: 8,
+            overflow: "hidden",
+            height: isNavMenuOpen ? 218 : 62,
+            transition: "height 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         >
+          {/* Nav Head */}
+          <button
+            title="Navegación"
+            onClick={() => setIsNavMenuOpen(!isNavMenuOpen)}
+            style={{
+              width: 44,
+              height: 44,
+              flexShrink: 0,
+              borderRadius: "50%",
+              border: "none",
+              background: isNavMenuOpen ? "rgba(51,158,234,0.88)" : "transparent",
+              color: "white",
+              fontWeight: 700,
+              fontSize: 14,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "background 0.15s, color 0.15s",
+            }}
+            onMouseOver={(e) => {
+              if (!isNavMenuOpen) e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+            }}
+            onMouseOut={(e) => {
+              if (!isNavMenuOpen) e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="34" height="26" viewBox="0 0 36 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 3 12 9 6" />
+              <line x1="15" y1="9" x2="21" y2="15" />
+              <line x1="21" y1="9" x2="15" y2="15" />
+              <polyline points="27 6 33 12 27 18" />
+            </svg>
+          </button>
+
+          {/* Nav Controls */}
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 8,
+            opacity: isNavMenuOpen ? 1 : 0,
+            pointerEvents: isNavMenuOpen ? "auto" : "none",
+            transition: "opacity 0.3s",
+          }}>
             <button
               type="button"
               title={
@@ -3650,6 +3824,72 @@ export function ImageLightboxCarousel({
             >
               <ArrowRightIcon />
             </button>
+            <button
+              title="Cerrar"
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: "50%",
+                border: "none",
+                background: "rgba(0,0,0,0.56)",
+                color: "white",
+                cursor: "pointer",
+                lineHeight: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "background 0.15s",
+              }}
+              onClick={onClose}
+              onMouseOver={(e) =>
+                (e.currentTarget.style.background = "rgba(255,0,0,1)")
+              }
+              onMouseOut={(e) =>
+                (e.currentTarget.style.background = "rgba(0,0,0,0.56)")
+              }
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        </div>
+
+        {/* ===== Info Button ===== */}
+        <div
+          style={{
+            width: 62,
+            background: "rgba(0,0,0,0.52)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            backdropFilter: "blur(4px)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.26)",
+            borderRadius: 999,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            padding: "9px 0",
+          }}
+        >
+          <button
+            title="Atajos de teclado"
+            onClick={() => setShowShortcutsModal(true)}
+            style={{
+              width: 44,
+              height: 44,
+              flexShrink: 0,
+              borderRadius: "50%",
+              border: "none",
+              background: "transparent",
+              color: "white",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "background 0.15s",
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = "rgba(51,158,234,0.78)"}
+            onMouseOut={(e) => e.currentTarget.style.background = "transparent"}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          </button>
         </div>
       </div>
 
@@ -3660,9 +3900,9 @@ export function ImageLightboxCarousel({
           gridRow: "1",
           zIndex: 3,
           width: "100%",
-          maxWidth: 280,
+          maxWidth: 480,
           height: "80%",
-          pointerEvents: "none",
+          pointerEvents: "auto",
           display: "flex",
           flexDirection: "column",
           justifySelf: "start",
@@ -3889,7 +4129,7 @@ export function ImageLightboxCarousel({
                       )}
                       {/* Stored measurements list */}
                       {measurements.length > 0 && (
-                        <div style={{ width: "100%", marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.15)", paddingTop: 8 }}>
+                        <div style={{ width: "50%", marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.15)", paddingTop: 8 }}>
                           <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                             Mediciones ({measurements.length})
                           </div>
@@ -4348,6 +4588,46 @@ export function ImageLightboxCarousel({
                 Confirmar calibración
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showShortcutsModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+          <div className="absolute inset-0 bg-[#10243f66] backdrop-blur-sm" onClick={() => setShowShortcutsModal(false)} />
+          <div className="relative bg-white rounded-[28px] shadow-xl border border-[#10243f14] max-w-md w-[90%] overflow-hidden p-8 text-left">
+            <h2 className="m-0 mb-6 text-[#10243f] text-2xl font-bold flex items-center gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[#339eea]"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><line x1="6" y1="8" x2="6" y2="8"></line><line x1="10" y1="8" x2="10" y2="8"></line><line x1="14" y1="8" x2="14" y2="8"></line><line x1="18" y1="8" x2="18" y2="8"></line><line x1="8" y1="12" x2="8" y2="12"></line><line x1="12" y1="12" x2="12" y2="12"></line><line x1="16" y1="12" x2="16" y2="12"></line><line x1="7" y1="16" x2="17" y2="16"></line></svg>
+              Atajos de teclado
+            </h2>
+            <ul className="list-none p-0 m-0 space-y-4 text-[#4d6684]">
+              <li className="flex justify-between items-center border-b border-[#10243f14] pb-3">
+                <span>Siguiente imagen</span>
+                <span className="bg-[#f0f4f8] text-[#10243f] px-2 py-1 rounded-md font-mono font-bold text-sm">Flecha Derecha</span>
+              </li>
+              <li className="flex justify-between items-center border-b border-[#10243f14] pb-3">
+                <span>Imagen anterior</span>
+                <span className="bg-[#f0f4f8] text-[#10243f] px-2 py-1 rounded-md font-mono font-bold text-sm">Flecha Izquierda</span>
+              </li>
+              <li className="flex justify-between items-center border-b border-[#10243f14] pb-3">
+                <span>Acercar / Alejar</span>
+                <span className="bg-[#f0f4f8] text-[#10243f] px-2 py-1 rounded-md font-mono font-bold text-sm">Rueda del Ratón</span>
+              </li>
+              <li className="flex justify-between items-center border-b border-[#10243f14] pb-3">
+                <span>Restablecer zoom y posición</span>
+                <span className="bg-[#f0f4f8] text-[#10243f] px-2 py-1 rounded-md font-mono font-bold text-sm">Doble Clic</span>
+              </li>
+              <li className="flex justify-between items-center">
+                <span>Salir del editor</span>
+                <span className="bg-[#f0f4f8] text-[#10243f] px-2 py-1 rounded-md font-mono font-bold text-sm">Esc</span>
+              </li>
+            </ul>
+            <button
+              onClick={() => setShowShortcutsModal(false)}
+              className="mt-8 px-8 py-3 rounded-xl bg-[#339eea] hover:bg-[#288ad3] text-white font-semibold text-base cursor-pointer transition-colors border-none w-full shadow-[0_4px_12px_rgba(51,158,234,0.3)] hover:translate-y-[-2px]"
+            >
+              Cerrar
+            </button>
           </div>
         </div>
       )}
@@ -7537,6 +7817,8 @@ export default function FileManager({
           </div>
         </div>
       )}
+
+
 
       <style
         dangerouslySetInnerHTML={{

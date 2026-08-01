@@ -147,8 +147,39 @@ function normalizeId(value: unknown): string | null {
 }
 
 
-function readDrawCacheStore(): Record<string, string> {
+const MEASUREMENTS_STORAGE_KEY = "measurement_cache_v1_by_image_url";
+
+export interface StoredMeasurement {
+  id: string;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  distancePx: number;
+  distanceUm: number | null;
+  color: string;
+}
+
+function readMeasurementsCacheStore(): Record<string, StoredMeasurement[]> {
   if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(MEASUREMENTS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, StoredMeasurement[]>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeMeasurementsCacheStore(store: Record<string, StoredMeasurement[]>): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    localStorage.setItem(MEASUREMENTS_STORAGE_KEY, JSON.stringify(store));
+    return true;
+  } catch (e) {
+    console.warn("[measurements cache] localStorage quota exceeded, skipping cache write.", e);
+    return false;
+  }
+}
+
+function readDrawCacheStore(): Record<string, string> {
   try {
     const raw = localStorage.getItem(DRAWINGS_STORAGE_KEY);
     return raw ? (JSON.parse(raw) as Record<string, string>) : {};
@@ -1467,12 +1498,69 @@ export function ImageLightboxCarousel({
     viewportHeight: 720,
   });
 
+  const [pencilColor, setPencilColor] = useState("#000000");
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [isPencilMenuOpen, setIsPencilMenuOpen] = useState(false);
+  const [showInclusionsSlider, setShowInclusionsSlider] = useState(false);
+
+  // Zoom & Pan state
+  const [zoomScale, setZoomScale] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const lastPanPos = useRef({ x: 0, y: 0 });
+
+  const zoomIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startContinuousZoom = useCallback((direction: "in" | "out") => {
+    setZoomScale(prev => direction === "in" ? Math.min(prev + 0.2, 10) : Math.max(prev - 0.2, 1));
+    if (zoomIntervalRef.current) clearInterval(zoomIntervalRef.current);
+    zoomIntervalRef.current = setInterval(() => {
+      setZoomScale(prev => direction === "in" ? Math.min(prev + 0.2, 10) : Math.max(prev - 0.2, 1));
+    }, 150);
+  }, []);
+
+  const stopContinuousZoom = useCallback(() => {
+    if (zoomIntervalRef.current) {
+      clearInterval(zoomIntervalRef.current);
+      zoomIntervalRef.current = null;
+    }
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    setZoomScale(1);
+    setPanOffset({ x: 0, y: 0 });
+  }, []);
+
+  // Persistent measurements
+  const MEASUREMENT_COLORS = ["#ff3333", "#33cc33", "#3399ff", "#ff9900", "#cc33ff", "#00cccc", "#ff6699", "#99cc00"];
+  
+  const [measurementsByImageUrl, setMeasurementsByImageUrl] = useState<Record<string, StoredMeasurement[]>>({});
+  
+  useEffect(() => {
+    setMeasurementsByImageUrl(readMeasurementsCacheStore());
+  }, []);
+
+  const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
+  const [hoveredMeasurementId, setHoveredMeasurementId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inclusionsCanvasRef = useRef<HTMLCanvasElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
   const currentImage = images[currentIndex];
+  const measurements = measurementsByImageUrl[currentImage?.url] || [];
+  
+  const setMeasurements = useCallback((updater: React.SetStateAction<StoredMeasurement[]>) => {
+    setMeasurementsByImageUrl(prev => {
+      const url = currentImage?.url;
+      if (!url) return prev;
+      const currentList = prev[url] || [];
+      const newList = typeof updater === "function" ? updater(currentList) : updater;
+      const newMap = { ...prev, [url]: newList };
+      writeMeasurementsCacheStore(newMap);
+      return newMap;
+    });
+  }, [currentImage?.url]);
 
   useEffect(() => {
     const canvas = inclusionsCanvasRef.current;
@@ -1524,6 +1612,10 @@ export function ImageLightboxCarousel({
     null,
   );
   const [isAstmMenuOpen, setIsAstmMenuOpen] = useState(false);
+  const [isZoomMenuOpen, setIsZoomMenuOpen] = useState(false);
+  const [isNavMenuOpen, setIsNavMenuOpen] = useState(false);
+  const [showMeasurements, setShowMeasurements] = useState(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const [isMaskDrawing, setIsMaskDrawing] = useState(false);
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
   const lastMaskPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -1594,7 +1686,7 @@ export function ImageLightboxCarousel({
   else if (aiProcessing) aiFxColor = "#e8a317"; // yellow
 
   const LIGHTBOX_SIDE_MIN = 40;
-  const MIN_CONTEXT_WIDTH = 280;
+  const MIN_CONTEXT_WIDTH = 480;
   const borderPad = showAiFx ? 8 : 0; // reserve space for the animated border
   const imageMaxWidth = Math.max(
     260,
@@ -1699,7 +1791,8 @@ export function ImageLightboxCarousel({
     } else {
       setActiveSidebarTool("overview");
     }
-  }, [currentIndex]);
+    resetZoom();
+  }, [currentIndex, resetZoom]);
 
   useEffect(() => {
     if (!currentImageIsCalibrable && activeSidebarTool !== "overview") {
@@ -1727,9 +1820,6 @@ export function ImageLightboxCarousel({
     setShowConfirmModal(false);
     setShowInputModal(false);
     setShowAutoDetectModal(false);
-    setShowAutoDetectModal(false);
-    setMaskEditTool(null);
-    setIsMaskDrawing(false);
     if (goToOverview) {
       setActiveSidebarTool("overview");
     }
@@ -1806,9 +1896,9 @@ export function ImageLightboxCarousel({
     };
   }, [currentIndex, syncEditorLayout]);
 
-  // Draw the line on canvas
-  const drawLine = useCallback(
-    (start: { x: number; y: number }, end: { x: number; y: number }) => {
+  // Draw measurements and active line on canvas
+  const drawMeasurementsAndLine = useCallback(
+    (start?: { x: number; y: number } | null, end?: { x: number; y: number } | null, activeColor?: string) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
@@ -1818,18 +1908,70 @@ export function ImageLightboxCarousel({
       const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
       const scale = (scaleX + scaleY) / 2;
       const displayLineWidthPx = 4;
-      const displayPointRadiusPx = 8;
+      const displayPointRadiusPx = 6;
+
+      if (!showMeasurements && activeSidebarTool !== "measurement") {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        return;
+      }
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.beginPath();
-      ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y);
-      ctx.strokeStyle = "#ff3333";
-      ctx.lineWidth = displayLineWidthPx * scale;
-      ctx.lineCap = "round";
-      ctx.stroke();
+
+      // Draw stored measurements first
+      measurements.forEach((m, i) => {
+        const isActive = m.id === selectedMeasurementId || m.id === hoveredMeasurementId;
+        ctx.beginPath();
+        ctx.moveTo(m.start.x, m.start.y);
+        ctx.lineTo(m.end.x, m.end.y);
+        ctx.strokeStyle = m.color;
+        ctx.lineWidth = (isActive ? 4 : 3) * scale;
+        ctx.lineCap = "round";
+        ctx.globalAlpha = isActive ? 1 : 0.7;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        // Endpoints
+        for (const pt of [m.start, m.end]) {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, displayPointRadiusPx * scale, 0, Math.PI * 2);
+          ctx.fillStyle = m.color;
+          ctx.fill();
+        }
+        
+        // Hover label
+        if (m.id === hoveredMeasurementId) {
+          const mx = (m.start.x + m.end.x) / 2;
+          const my = (m.start.y + m.end.y) / 2;
+          const label = `#${i + 1}`;
+          
+          ctx.font = `bold ${14 * scale}px Inter, sans-serif`;
+          const textMetrics = ctx.measureText(label);
+          const bgWidth = textMetrics.width + 12 * scale;
+          const bgHeight = 22 * scale;
+          
+          ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+          ctx.beginPath();
+          ctx.roundRect(mx - bgWidth / 2, my - bgHeight / 2 - 15 * scale, bgWidth, bgHeight, 6 * scale);
+          ctx.fill();
+          
+          ctx.fillStyle = "white";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(label, mx, my - 15 * scale);
+        }
+      });
+
+      // Draw the active line
+      if (start && end) {
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(end.x, end.y);
+        ctx.strokeStyle = activeColor || "#ff3333";
+        ctx.lineWidth = displayLineWidthPx * scale;
+        ctx.lineCap = "round";
+        ctx.stroke();
+      }
     },
-    [],
+    [measurements, selectedMeasurementId, hoveredMeasurementId, showMeasurements, activeSidebarTool],
   );
 
   // Draw AI calibration box — scale vertices from source image space to canvas space
@@ -1867,7 +2009,9 @@ export function ImageLightboxCarousel({
     if (!currentImage) return;
     const data = calibrationData[currentImage.url];
     // Only draw it if we're not currently doing manual calibration/measure and if it's AI
-    if (data?.vertices && data.isAi && showAiFx) {
+    if ((showMeasurements || activeSidebarTool === "measurement") && !isMeasuring) {
+      drawMeasurementsAndLine();
+    } else if (data?.vertices && data.isAi && showAiFx) {
       drawVertices(data.vertices, data.sourceWidth, data.sourceHeight);
     } else {
       const canvas = canvasRef.current;
@@ -1876,7 +2020,7 @@ export function ImageLightboxCarousel({
         if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
     }
-  }, [currentIndex, calibrationData, drawVertices, images, showAiFx, canvasLayoutCounter]);
+  }, [currentIndex, calibrationData, drawVertices, images, showAiFx, canvasLayoutCounter, activeSidebarTool, showMeasurements, measurements, hoveredMeasurementId, selectedMeasurementId, drawMeasurementsAndLine, isMeasuring]);
 
   // Get position relative to the canvas (which matches natural image coords)
   const getCanvasPos = (
@@ -1907,7 +2051,7 @@ export function ImageLightboxCarousel({
     const pos = getCanvasPos(e);
     if (!pos) return;
     setLineEnd(pos);
-    drawLine(lineStart, pos);
+    drawMeasurementsAndLine(lineStart, pos);
   };
 
   const handleCanvasMouseUp = () => {
@@ -1941,16 +2085,39 @@ export function ImageLightboxCarousel({
   };
 
   const handleMeasurementMouseMove = (e: React.MouseEvent) => {
-    if (!measurementMode || !isMeasuring || !measurementStart) return;
+    if (!measurementMode) return;
     const pos = getCanvasPos(e);
     if (!pos) return;
-    setMeasurementEnd(pos);
-    const dx = pos.x - measurementStart.x;
-    const dy = pos.y - measurementStart.y;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    setMeasurementPx(len);
-    drawLine(measurementStart, pos);
-    setMeasurementLabelPos({ x: e.clientX, y: e.clientY });
+    
+    if (isMeasuring && measurementStart) {
+      setMeasurementEnd(pos);
+      const dx = pos.x - measurementStart.x;
+      const dy = pos.y - measurementStart.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      setMeasurementPx(len);
+      drawMeasurementsAndLine(measurementStart, pos);
+      setMeasurementLabelPos({ x: e.clientX, y: e.clientY });
+    } else {
+      let foundHover: string | null = null;
+      for (const m of measurements) {
+        const l2 = (m.end.x - m.start.x) ** 2 + (m.end.y - m.start.y) ** 2;
+        if (l2 === 0) continue;
+        const t = Math.max(0, Math.min(1, ((pos.x - m.start.x) * (m.end.x - m.start.x) + (pos.y - m.start.y) * (m.end.y - m.start.y)) / l2));
+        const proj = { x: m.start.x + t * (m.end.x - m.start.x), y: m.start.y + t * (m.end.y - m.start.y) };
+        const dist = Math.sqrt((pos.x - proj.x) ** 2 + (pos.y - proj.y) ** 2);
+        
+        const rect = canvasRef.current?.getBoundingClientRect();
+        const scaleX = rect && rect.width > 0 ? canvasRef.current!.width / rect.width : 1;
+        
+        if (dist < 8 * scaleX) {
+          foundHover = m.id;
+          break;
+        }
+      }
+      if (foundHover !== hoveredMeasurementId) {
+        setHoveredMeasurementId(foundHover);
+      }
+    }
   };
 
   const handleMeasurementMouseUp = () => {
@@ -1978,6 +2145,20 @@ export function ImageLightboxCarousel({
     }
 
     setMeasurementPx(len);
+
+    // Store the measurement persistently
+    const distUm = calibrationRatio ? len * calibrationRatio : null;
+    const color = MEASUREMENT_COLORS[measurements.length % MEASUREMENT_COLORS.length];
+    const newMeasurement: StoredMeasurement = {
+      id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      start: { ...measurementStart },
+      end: { ...measurementEnd },
+      distancePx: len,
+      distanceUm: distUm,
+      color,
+    };
+    setMeasurements(prev => [...prev, newMeasurement]);
+    setSelectedMeasurementId(newMeasurement.id);
   };
 
   const handleMeasurementMouseLeave = () => {
@@ -2035,14 +2216,18 @@ export function ImageLightboxCarousel({
 
   const handleActivateMeasurement = () => {
     if (!currentImageIsCalibrable || !measurementEnabled) return;
-    if (activeSidebarTool === "measurement") {
-      resetMeasurementState();
-      setActiveSidebarTool("overview");
-      return;
+    if (showMeasurements) {
+      setShowMeasurements(false);
+      if (activeSidebarTool === "measurement") {
+        resetMeasurementState();
+        setActiveSidebarTool("overview");
+      }
+    } else {
+      resetCalibrationState(false);
+      setShowMeasurements(true);
+      setActiveSidebarTool("measurement");
+      setTimeout(syncCanvasSize, 50);
     }
-    resetCalibrationState(false);
-    setActiveSidebarTool("measurement");
-    setTimeout(syncCanvasSize, 50);
   };
 
   const handleAutoDetectCancel = () => {
@@ -2196,8 +2381,8 @@ export function ImageLightboxCarousel({
 
     if (maskEditTool === "pencil") {
       ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = "rgb(0,0,0)";
-      ctx.fillStyle = "rgb(0,0,0)";
+      ctx.strokeStyle = pencilColor;
+      ctx.fillStyle = pencilColor;
       ctx.lineWidth = brushRadius * 2;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
@@ -2352,11 +2537,13 @@ export function ImageLightboxCarousel({
         zIndex: 9999,
         background: "rgba(0,0,0,0.92)",
         backdropFilter: "blur(8px)",
-        display: "flex",
-        flexDirection: "column",
+        display: "grid",
+        gridTemplateColumns: "100px 1fr 480px",
+        gridTemplateRows: "100%",
         alignItems: "center",
-        justifyContent: "center",
+        justifyItems: "center",
         userSelect: "none",
+        overflow: "hidden",
       }}
     >
       {/* Top toolbar */}
@@ -2371,40 +2558,18 @@ export function ImageLightboxCarousel({
           alignItems: "center",
         }}
       >
-        {/* Close button */}
-        <button
-          title="Cerrar"
-          style={{
-            background: "rgba(0,0,0,0.5)",
-            border: "none",
-            borderRadius: "50%",
-            padding: 8,
-            cursor: "pointer",
-            color: "white",
-            lineHeight: 0,
-            transition: "background 0.15s",
-          }}
-          onClick={onClose}
-          onMouseOver={(e) =>
-            (e.currentTarget.style.background = "rgba(0,0,0,0.8)")
-          }
-          onMouseOut={(e) =>
-            (e.currentTarget.style.background = "rgba(0,0,0,0.5)")
-          }
-        >
-          <CloseIcon />
-        </button>
+        {/* Close button moved to navigation section */}
       </div>
 
-      {/* ===== Image centered in viewport (offset left to reserve context space) ===== */}
+      {/* ===== Image centered in grid column 2 ===== */}
       <div
         style={{
-          position: "absolute",
-          inset: 0,
+          gridColumn: "2",
+          gridRow: "1",
+          width: "100%",
+          height: "100%",
           paddingTop: 50,
           paddingBottom: 50,
-          paddingLeft: LIGHTBOX_SIDE_MIN,
-          paddingRight: MIN_CONTEXT_WIDTH,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -2413,7 +2578,32 @@ export function ImageLightboxCarousel({
       >
         <div
           ref={imageContainerRef}
+          onDoubleClick={(e) => { e.stopPropagation(); resetZoom(); }}
+          onWheel={(e) => {
+            if (e.ctrlKey || e.metaKey) return; // allow native browser zoom
+            // e.preventDefault() cannot be called reliably on React passive wheel events, but we can manage state
+            const zoomDelta = e.deltaY > 0 ? -0.15 : 0.15;
+            setZoomScale(prev => Math.min(Math.max(1, prev + prev * zoomDelta), 10));
+          }}
+          onMouseDown={(e) => {
+            if (e.button === 1 || (e.button === 0 && (activeSidebarTool === "overview" || (activeSidebarTool === "mask" && !maskEditTool)))) {
+              e.preventDefault();
+              setIsPanning(true);
+              lastPanPos.current = { x: e.clientX, y: e.clientY };
+            }
+          }}
+          onMouseUp={(e) => {
+            if (isPanning) setIsPanning(false);
+          }}
           onMouseMove={(e) => {
+            if (isPanning) {
+              const dx = e.clientX - lastPanPos.current.x;
+              const dy = e.clientY - lastPanPos.current.y;
+              setPanOffset(prev => ({ x: prev.x + dx / zoomScale, y: prev.y + dy / zoomScale }));
+              lastPanPos.current = { x: e.clientX, y: e.clientY };
+              return;
+            }
+
             const polygons = inclusionsByImageUrl?.[currentImage?.url];
             const isVisible = inclusionsVisibleByImageUrl?.[currentImage?.url];
             if (!isVisible || !polygons || polygons.length === 0) {
@@ -2460,7 +2650,10 @@ export function ImageLightboxCarousel({
               setHoveredInclusion(null);
             }
           }}
-          onMouseLeave={() => setHoveredInclusion(null)}
+          onMouseLeave={() => {
+            if (isPanning) setIsPanning(false);
+            setHoveredInclusion(null);
+          }}
           style={{
             maxWidth: imageMaxWidth + borderPad,
             maxHeight: imageMaxHeight + borderPad,
@@ -2469,6 +2662,10 @@ export function ImageLightboxCarousel({
             alignItems: "center",
             justifyContent: "center",
             position: "relative",
+            transform: `scale(${zoomScale}) translate(${panOffset.x}px, ${panOffset.y}px)`,
+            transformOrigin: "center center",
+            transition: isPanning ? "none" : "transform 0.1s ease-out",
+            cursor: isPanning ? "grabbing" : (activeSidebarTool === "overview" ? "grab" : "default"),
           }}
         >
           <div
@@ -2625,31 +2822,6 @@ export function ImageLightboxCarousel({
                   }
                 }}
               />
-            {/* Old pill removed */}
-            {measurementMode &&
-              measurementLabelPos &&
-              measurementDistanceUm !== null && (
-                <div
-                  style={{
-                    position: "fixed",
-                    left: measurementLabelPos.x + 12,
-                    top: measurementLabelPos.y - 28,
-                    padding: "4px 8px",
-                    borderRadius: 8,
-                    background: "rgba(0,0,0,0.72)",
-                    color: "white",
-                    fontSize: "0.78rem",
-                    fontWeight: 700,
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    boxShadow: "0 6px 14px rgba(0,0,0,0.25)",
-                    pointerEvents: "none",
-                    zIndex: 5,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {measurementDistanceUm.toFixed(2)} µm
-                </div>
-              )}
             {hoveredInclusion && (
               <div
                 style={{
@@ -2681,29 +2853,55 @@ export function ImageLightboxCarousel({
         </div>
       </div>
 
-      {/* ===== Left sidebar — centered in left gap ===== */}
+      {measurementMode &&
+        measurementLabelPos &&
+        measurementDistanceUm !== null && (
+          <div
+            style={{
+              position: "fixed",
+              left: measurementLabelPos.x + 12,
+              top: measurementLabelPos.y - 28,
+              padding: "4px 8px",
+              borderRadius: 8,
+              background: "rgba(0,0,0,0.72)",
+              color: "white",
+              fontSize: "0.78rem",
+              fontWeight: 700,
+              border: "1px solid rgba(255,255,255,0.2)",
+              boxShadow: "0 6px 14px rgba(0,0,0,0.25)",
+              pointerEvents: "none",
+              zIndex: 9999,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {measurementDistanceUm.toFixed(2)} µm
+          </div>
+        )}
+
+      {/* ===== Left Action Toolbar (conditionally renders tools/calibration) ===== */}
       <div
         style={{
-          position: "absolute",
-          left: sidebarCenterX,
-          top: "50%",
-          transform: "translate(-50%, -50%)",
+          gridColumn: "1",
+          gridRow: "1",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
           zIndex: 6,
         }}
       >
         <aside
           style={{
             width: 62,
-            minHeight: currentImageIsCalibrable ? 300 : 112,
+            height: "fit-content",
             maxHeight: `calc(100vh - 40px)`, // Ensure it fits viewport
             borderRadius: 999,
-            padding: currentImageIsCalibrable ? "16px 8px 0px 8px" : "8px 8px 0px 8px", // Move bottom padding to a spacer
+            padding: "9px 0",
             background: "rgba(0,0,0,0.52)",
             border: "1px solid rgba(255,255,255,0.14)",
             backdropFilter: "blur(4px)",
-            overflowY: "auto",
-            overflowX: "hidden",
-            scrollbarWidth: "none",
+            overflow: "visible",
             display: "flex",
             flexDirection: "column",
             justifyContent: currentImageIsCalibrable
@@ -2814,7 +3012,7 @@ export function ImageLightboxCarousel({
                   borderRadius: "50%",
                   border: "none",
                   background:
-                    activeSidebarTool === "measurement"
+                    showMeasurements || activeSidebarTool === "measurement"
                       ? "rgba(51,158,234,0.88)"
                       : "rgba(0,0,0,0.56)",
                   color: "white",
@@ -2899,7 +3097,7 @@ export function ImageLightboxCarousel({
                 <MaskIcon />
               </button>
               {/* ---- Inclusions tool ---- */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+              <div style={{ position: "relative", display: "flex", justifyContent: "center", width: "100%" }}>
                 <button
                   title={
                     inclusionsLoadingByImageUrl?.[currentImage.url]
@@ -2930,6 +3128,11 @@ export function ImageLightboxCarousel({
                   onClick={() => onCheckMicrographLimit(() => {
                     setActiveSidebarTool((prev) => (prev === "overview" ? "mask" : prev));
                     if (onDetectInclusiones) {
+                      if (!inclusionsVisibleByImageUrl?.[currentImage.url]) {
+                        setShowInclusionsSlider(true);
+                      } else {
+                        setShowInclusionsSlider(false);
+                      }
                       void onDetectInclusiones(currentImage.url);
                     }
                   })}
@@ -2944,17 +3147,43 @@ export function ImageLightboxCarousel({
                 >
                   <InclusionsIcon />
                 </button>
-                {inclusionsVisibleByImageUrl?.[currentImage.url] && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                
+                {/* Popover */}
+                {showInclusionsSlider && inclusionsVisibleByImageUrl?.[currentImage.url] && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: "absolute",
+                      top: "50%",
+                      left: "calc(100% + 16px)",
+                      transform: "translateY(-50%)",
+                      zIndex: 60,
+                      background: "rgba(15, 17, 21, 0.95)",
+                      backdropFilter: "blur(16px)",
+                      borderRadius: 16,
+                      padding: "16px 8px",
+                      boxShadow: "0 20px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1)",
+                      animation: "dropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 12,
+                      width: 56,
+                    }}
+                  >
                     <span style={{ 
-                      fontSize: 12, 
+                      fontSize: 13, 
                       fontWeight: "bold", 
                       color: "white", 
                       userSelect: "none",
                       background: "rgba(0,0,0,0.56)",
-                      padding: "4px 8px",
+                      padding: "4px 0",
                       borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.1)"
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
+                      width: "100%",
+                      textAlign: "center",
+                      display: "inline-block",
                     }}>
                       {(inclusionsThreshold * 100).toFixed(0)}%
                     </span>
@@ -2967,7 +3196,7 @@ export function ImageLightboxCarousel({
                       onChange={(e) => setInclusionsThreshold(parseFloat(e.target.value))}
                       title={`Threshold de confianza: ${(inclusionsThreshold * 100).toFixed(0)}%`}
                       style={{
-                        height: 100,
+                        height: 120,
                         width: 40,
                         writingMode: "vertical-lr",
                         direction: "rtl",
@@ -2979,211 +3208,264 @@ export function ImageLightboxCarousel({
                   </div>
                 )}
               </div>
-              {/* ---- Pencil tool ---- */}
-              <button
-                title="Lápiz (pintar negro)"
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: "50%",
-                  border: "none",
-                  background:
-                    maskEditTool === "pencil"
-                      ? "rgba(51,158,234,0.88)"
-                      : "rgba(0,0,0,0.56)",
-                  color: "white",
-                  cursor: isMeasurementOverlayVisible ? "default" : "pointer",
-                  lineHeight: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  transition: "background 0.15s",
-                  opacity: isMeasurementOverlayVisible ? 0.4 : 1,
-                }}
-                disabled={isMeasurementOverlayVisible}
-                onClick={() => onCheckMicrographLimit(() => {
-                  setActiveSidebarTool("mask");
-                  setMaskEditTool((prev) =>
-                    prev === "pencil" ? null : "pencil",
-                  );
-                })}
-                onMouseOver={(e) => {
-                  if (maskEditTool === "pencil" || isMeasurementOverlayVisible) return;
-                  e.currentTarget.style.background = "rgba(51,158,234,0.78)";
-                }}
-                onMouseOut={(e) => {
-                  if (maskEditTool === "pencil") return;
-                  e.currentTarget.style.background = "rgba(0,0,0,0.56)";
-                }}
-              >
-                <PencilIcon />
-              </button>
-              {/* ---- Eraser tool ---- */}
-              <button
-                title="Goma (borrar máscara)"
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: "50%",
-                  border: "none",
-                  background:
-                    maskEditTool === "eraser"
-                      ? "rgba(51,158,234,0.88)"
-                      : "rgba(0,0,0,0.56)",
-                  color: "white",
-                  cursor: isMeasurementOverlayVisible ? "default" : "pointer",
-                  lineHeight: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  transition: "background 0.15s",
-                  opacity: isMeasurementOverlayVisible ? 0.4 : 1,
-                }}
-                disabled={isMeasurementOverlayVisible}
-                onClick={() => onCheckMicrographLimit(() => {
-                  setActiveSidebarTool("mask");
-                  setMaskEditTool((prev) =>
-                    prev === "eraser" ? null : "eraser",
-                  );
-                })}
-                onMouseOver={(e) => {
-                  if (maskEditTool === "eraser" || isMeasurementOverlayVisible) return;
-                  e.currentTarget.style.background = "rgba(51,158,234,0.78)";
-                }}
-                onMouseOut={(e) => {
-                  if (maskEditTool === "eraser") return;
-                  e.currentTarget.style.background = "rgba(0,0,0,0.56)";
-                }}
-              >
-                <EraserIcon />
-              </button>
-              <button
-                title="Limpiar dibujo"
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: "50%",
-                  border: "none",
-                  background: "rgba(0,0,0,0.56)",
-                  color: "white",
-                  cursor: isDrawingToolActive ? "pointer" : "default",
-                  lineHeight: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  transition: "background 0.15s",
-                  opacity: isDrawingToolActive ? 1 : 0.45,
-                }}
-                disabled={!isDrawingToolActive}
-                onClick={() => onCheckMicrographLimit(() => {
-                  if (!isDrawingToolActive) return;
-                  clearCurrentDrawing();
-                })}
-                onMouseOver={(e) => {
-                  if (!isDrawingToolActive) return;
-                  e.currentTarget.style.background = "rgba(51,158,234,0.78)";
-                }}
-                onMouseOut={(e) => {
-                  if (!isDrawingToolActive) return;
-                  e.currentTarget.style.background = "rgba(0,0,0,0.56)";
-                }}
-              >
-                <TrashIcon />
-              </button>
+              {/* ---- Pencil tool (Drawer Trigger) ---- */}
+              <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
+                <button
+                  title="Herramientas de Dibujo"
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: "50%",
+                    border: "none",
+                    background:
+                      isPencilMenuOpen
+                        ? "rgba(51,158,234,0.88)"
+                        : "rgba(0,0,0,0.56)",
+                    color: "white",
+                    cursor: isMeasurementOverlayVisible ? "default" : "pointer",
+                    lineHeight: 0,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    transition: "background 0.15s",
+                    opacity: isMeasurementOverlayVisible ? 0.4 : 1,
+                    zIndex: 10
+                  }}
+                  disabled={isMeasurementOverlayVisible}
+                  onClick={() => onCheckMicrographLimit(() => {
+                    setIsPencilMenuOpen(prev => {
+                      const next = !prev;
+                      if (next) {
+                        setActiveSidebarTool("mask");
+                        setMaskEditTool("pencil");
+                      } else {
+                        setMaskEditTool(null);
+                        if (activeSidebarTool === "mask") {
+                          setActiveSidebarTool("overview");
+                        }
+                      }
+                      return next;
+                    });
+                  })}
+                  onMouseOver={(e) => {
+                    if (isPencilMenuOpen || isMeasurementOverlayVisible) return;
+                    e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+                  }}
+                  onMouseOut={(e) => {
+                    if (isPencilMenuOpen) return;
+                    e.currentTarget.style.background = "rgba(0,0,0,0.56)";
+                  }}
+                >
+                  <PencilIcon />
+                </button>
+                
+                <div style={{ 
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+                    overflow: "hidden",
+                    maxHeight: isPencilMenuOpen ? 300 : 0,
+                    opacity: isPencilMenuOpen ? 1 : 0,
+                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                    width: "100%",
+                  }}>
+                    <div style={{ width: 44, height: 1, background: "rgba(255,255,255,0.1)", marginTop: 2, flexShrink: 0 }} />
+                    {/* Color picker dot triggering the modalcito */}
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowColorPicker((prev) => !prev);
+                      }}
+                      title="Elegir Color"
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: "50%",
+                        background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)",
+                        cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        flexShrink: 0,
+                        boxShadow: "0 2px 5px rgba(0,0,0,0.5)",
+                        marginTop: 4
+                      }}
+                    >
+                      <div style={{ width: 18, height: 18, borderRadius: "50%", background: pencilColor, border: "2px solid rgba(255,255,255,0.9)", pointerEvents: "none" }} />
+                    </div>
+
+                    <div style={{ width: "60%", height: 1, background: "rgba(255,255,255,0.1)" }} />
+
+                    {/* ---- Eraser tool ---- */}
+                    <button
+                      title="Goma (borrar máscara)"
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: "50%",
+                        border: "none",
+                        background:
+                          maskEditTool === "eraser"
+                            ? "rgba(51,158,234,0.88)"
+                            : "rgba(0,0,0,0.4)",
+                        color: "white",
+                        cursor: "pointer",
+                        lineHeight: 0,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "background 0.15s",
+                      }}
+                      onClick={() => {
+                        setMaskEditTool((prev) =>
+                          prev === "eraser" ? "pencil" : "eraser",
+                        );
+                      }}
+                      onMouseOver={(e) => {
+                        if (maskEditTool === "eraser") return;
+                        e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+                      }}
+                      onMouseOut={(e) => {
+                        if (maskEditTool === "eraser") return;
+                        e.currentTarget.style.background = "rgba(0,0,0,0.4)";
+                      }}
+                    >
+                      <EraserIcon />
+                    </button>
+                    <button
+                      title="Limpiar dibujo"
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: "50%",
+                        border: "none",
+                        background: "rgba(0,0,0,0.4)",
+                        color: "white",
+                        cursor: isDrawingToolActive ? "pointer" : "default",
+                        lineHeight: 0,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "background 0.15s",
+                        opacity: isDrawingToolActive ? 1 : 0.45,
+                      }}
+                      disabled={!isDrawingToolActive}
+                      onClick={() => {
+                        if (!isDrawingToolActive) return;
+                        clearCurrentDrawing();
+                      }}
+                      onMouseOver={(e) => {
+                        if (!isDrawingToolActive) return;
+                        e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+                      }}
+                      onMouseOut={(e) => {
+                        if (!isDrawingToolActive) return;
+                        e.currentTarget.style.background = "rgba(0,0,0,0.4)";
+                      }}
+                    >
+                      <TrashIcon />
+                    </button>
+                </div>
+
+                {/* Glassmorphism Color picker popover */}
+                {showColorPicker && isPencilMenuOpen && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: "absolute",
+                      top: 70,
+                      left: "calc(100% + 16px)",
+                      zIndex: 60,
+                      background: "rgba(15, 17, 21, 0.95)",
+                      backdropFilter: "blur(16px)",
+                      borderRadius: 16,
+                      padding: 16,
+                      boxShadow: "0 20px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1)",
+                      animation: "dropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                      width: 200,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12,
+                    }}
+                  >
+                    {/* Swatches Grid */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+                      {["#ffffff", "#ff3b30", "#ff9500", "#ffcc00", "#4cd964", "#5ac8fa", "#007aff", "#5856d6", "#ff2d55", "#000000"].map((c) => (
+                        <div
+                          key={c}
+                          onClick={() => setPencilColor(c)}
+                          style={{
+                            aspectRatio: "1",
+                            borderRadius: "50%",
+                            background: c,
+                            cursor: "pointer",
+                            border: pencilColor.toLowerCase() === c ? "2px solid #339eea" : "2px solid rgba(255,255,255,0.15)",
+                            boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
+                            transform: pencilColor.toLowerCase() === c ? "scale(1.15)" : "scale(1)",
+                            transition: "all 0.2s",
+                          }}
+                        />
+                      ))}
+                    </div>
+
+                    <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "2px 0" }} />
+
+                    {/* Custom Color (Native Fallback beautifully wrapped) */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <label
+                        title="Abrir paleta avanzada..."
+                        style={{
+                          position: "relative",
+                          width: 32,
+                          height: 32,
+                          borderRadius: "50%",
+                          background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)",
+                          cursor: "pointer",
+                          overflow: "hidden",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          flexShrink: 0,
+                          boxShadow: "0 2px 5px rgba(0,0,0,0.5)"
+                        }}
+                      >
+                        <div style={{ width: 22, height: 22, borderRadius: "50%", background: pencilColor, border: "2px solid rgba(255,255,255,0.9)", pointerEvents: "none" }} />
+                        <input
+                          type="color"
+                          value={pencilColor}
+                          onChange={(e) => setPencilColor(e.target.value)}
+                          style={{ opacity: 0, position: "absolute", width: "200%", height: "200%", top: "-50%", left: "-50%", cursor: "pointer" }}
+                        />
+                      </label>
+                      <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+                        <span style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>CÓDIGO HEX</span>
+                        <input 
+                          type="text" 
+                          value={pencilColor.toUpperCase()}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPencilColor(val);
+                          }}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "white",
+                            fontSize: "0.85rem",
+                            fontWeight: 600,
+                            fontFamily: "monospace",
+                            outline: "none",
+                            width: "100%",
+                            padding: 0,
+                            margin: 0,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              marginBottom: currentImageIsCalibrable ? 4 : 0,
-            }}
-          >
-            <button
-              title={
-                hasSiblingImages
-                  ? "Imagen anterior"
-                  : "Sin micrografías hermanas"
-              }
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: "50%",
-                border: "none",
-                background: "rgba(0,0,0,0.56)",
-                color: "white",
-                cursor: hasSiblingImages ? "pointer" : "default",
-                lineHeight: 0,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                transition: "background 0.15s",
-                opacity: hasSiblingImages ? 1 : 0.55,
-              }}
-              onClick={() => {
-                if (!hasSiblingImages) return;
-                setCurrentIndex((p) => (p > 0 ? p - 1 : images.length - 1));
-              }}
-              onMouseOver={(e) => {
-                if (!hasSiblingImages) return;
-                e.currentTarget.style.background = "rgba(51,158,234,0.78)";
-              }}
-              onMouseOut={(e) => {
-                if (!hasSiblingImages) return;
-                e.currentTarget.style.background = "rgba(0,0,0,0.56)";
-              }}
-            >
-              <ArrowLeftIcon />
-            </button>
-
-            <button
-              title={
-                hasSiblingImages
-                  ? "Imagen siguiente"
-                  : "Sin micrografías hermanas"
-              }
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: "50%",
-                border: "none",
-                background: "rgba(0,0,0,0.56)",
-                color: "white",
-                cursor: hasSiblingImages ? "pointer" : "default",
-                lineHeight: 0,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                transition: "background 0.15s",
-                opacity: hasSiblingImages ? 1 : 0.55,
-              }}
-              onClick={() => {
-                if (!hasSiblingImages) return;
-                setCurrentIndex((p) => (p < images.length - 1 ? p + 1 : 0));
-              }}
-              onMouseOver={(e) => {
-                if (!hasSiblingImages) return;
-                e.currentTarget.style.background = "rgba(51,158,234,0.78)";
-              }}
-              onMouseOut={(e) => {
-                if (!hasSiblingImages) return;
-                e.currentTarget.style.background = "rgba(0,0,0,0.56)";
-              }}
-            >
-              <ArrowRightIcon />
-            </button>
-          </div>
-          <div style={{ flexShrink: 0, height: 16, width: "100%" }} />
         </aside>
         
         {/* ===== ASTM Menu ===== */}
         <div 
           style={{
-            marginTop: 8,
             width: 62,
             background: "rgba(0,0,0,0.52)",
             border: "1px solid rgba(255,255,255,0.14)",
@@ -3249,7 +3531,7 @@ export function ImageLightboxCarousel({
                 ? "rgba(51,158,234,0.88)"
                 : "rgba(0,0,0,0.56)",
               color: "white",
-              cursor: (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible) ? "default" : "pointer",
+              cursor: ((activeSidebarTool === "measurement" || activeSidebarTool === "calibration" || (activeSidebarTool === "mask" && maskEditTool !== null)) && !isMeasurementOverlayVisible) ? "default" : "pointer",
               lineHeight: 0,
               display: "inline-flex",
               flexDirection: "column",
@@ -3257,10 +3539,10 @@ export function ImageLightboxCarousel({
               justifyContent: "center",
               gap: 2,
               transition: "background 0.15s, opacity 0.3s",
-              opacity: isAstmMenuOpen ? (currentMeasurementOverlayUrl ? ((activeSidebarTool !== "overview" && !isMeasurementOverlayVisible) ? 0.4 : 1) : 0.55) : 0,
+              opacity: isAstmMenuOpen ? (currentMeasurementOverlayUrl ? (((activeSidebarTool === "measurement" || activeSidebarTool === "calibration" || (activeSidebarTool === "mask" && maskEditTool !== null)) && !isMeasurementOverlayVisible) ? 0.4 : 1) : 0.55) : 0,
               pointerEvents: isAstmMenuOpen ? "auto" : "none",
             }}
-            disabled={!currentMeasurementOverlayUrl || (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible) || !isAstmMenuOpen}
+            disabled={!currentMeasurementOverlayUrl || ((activeSidebarTool === "measurement" || activeSidebarTool === "calibration" || (activeSidebarTool === "mask" && maskEditTool !== null)) && !isMeasurementOverlayVisible) || !isAstmMenuOpen}
             onClick={(e) => {
               e.stopPropagation();
               onCheckMicrographLimit(() => {
@@ -3274,11 +3556,13 @@ export function ImageLightboxCarousel({
               });
             }}
             onMouseOver={(e) => {
-              if (!currentMeasurementOverlayUrl || isMeasurementOverlayVisible || (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible)) return;
+              const isDisabled = !currentMeasurementOverlayUrl || ((activeSidebarTool === "measurement" || activeSidebarTool === "calibration" || (activeSidebarTool === "mask" && maskEditTool !== null)) && !isMeasurementOverlayVisible) || !isAstmMenuOpen;
+              if (isDisabled || isMeasurementOverlayVisible) return;
               e.currentTarget.style.background = "rgba(51,158,234,0.78)";
             }}
             onMouseOut={(e) => {
-              if (!currentMeasurementOverlayUrl || isMeasurementOverlayVisible || (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible)) return;
+              const isDisabled = !currentMeasurementOverlayUrl || ((activeSidebarTool === "measurement" || activeSidebarTool === "calibration" || (activeSidebarTool === "mask" && maskEditTool !== null)) && !isMeasurementOverlayVisible) || !isAstmMenuOpen;
+              if (isDisabled || isMeasurementOverlayVisible) return;
               e.currentTarget.style.background = "rgba(0,0,0,0.56)";
             }}
           >
@@ -3286,21 +3570,342 @@ export function ImageLightboxCarousel({
             <span style={{ fontSize: 9, fontWeight: 700, lineHeight: 1 }}>E112</span>
           </button>
         </div>
+
+        {/* ===== Zoom Menu ===== */}
+        <div 
+          style={{
+            width: 62,
+            background: "rgba(0,0,0,0.52)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            backdropFilter: "blur(4px)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.26)",
+            borderRadius: 999,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            padding: "9px 0",
+            gap: 8,
+            overflow: "hidden",
+            height: isZoomMenuOpen ? 200 : 62,
+            transition: "height 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+          }}
+        >
+          {/* Zoom Head */}
+          <button
+            title="Zoom"
+            onClick={() => setIsZoomMenuOpen(!isZoomMenuOpen)}
+            style={{
+              width: 44,
+              height: 44,
+              flexShrink: 0,
+              borderRadius: "50%",
+              border: "none",
+              background: isZoomMenuOpen ? "rgba(51,158,234,0.88)" : "transparent",
+              color: "white",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "background 0.15s, color 0.15s",
+            }}
+            onMouseOver={(e) => {
+              if (!isZoomMenuOpen) e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+            }}
+            onMouseOut={(e) => {
+              if (!isZoomMenuOpen) e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
+
+          {/* Zoom Controls */}
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 8,
+            opacity: isZoomMenuOpen ? 1 : 0,
+            pointerEvents: isZoomMenuOpen ? "auto" : "none",
+            transition: "opacity 0.3s",
+          }}>
+            <button
+              type="button"
+              title="Acercar (Zoom In)"
+              onMouseDown={(e) => { e.stopPropagation(); startContinuousZoom("in"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+              onMouseUp={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+              onMouseLeave={(e) => { stopContinuousZoom(); e.currentTarget.style.background = "rgba(0,0,0,0.56)"; }}
+              onTouchStart={(e) => { e.stopPropagation(); startContinuousZoom("in"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+              onTouchEnd={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+              style={{
+                width: 44, height: 44, borderRadius: "50%", border: "none",
+                background: "rgba(0,0,0,0.56)", color: "white", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "background 0.15s",
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+            
+            <div 
+              title="Restablecer Zoom"
+              onClick={(e) => { e.stopPropagation(); resetZoom(); }}
+              style={{ 
+                fontSize: "0.6rem", fontWeight: 700, color: "white", cursor: "pointer", 
+                padding: "4px", background: "rgba(255,255,255,0.1)", borderRadius: 4 
+              }}
+            >
+              {Math.round(zoomScale * 100)}%
+            </div>
+
+            <button
+              type="button"
+              title="Alejar (Zoom Out)"
+              onMouseDown={(e) => { e.stopPropagation(); startContinuousZoom("out"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+              onMouseUp={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+              onMouseLeave={(e) => { stopContinuousZoom(); e.currentTarget.style.background = "rgba(0,0,0,0.56)"; }}
+              onTouchStart={(e) => { e.stopPropagation(); startContinuousZoom("out"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+              onTouchEnd={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+              style={{
+                width: 44, height: 44, borderRadius: "50%", border: "none",
+                background: "rgba(0,0,0,0.56)", color: "white", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "background 0.15s",
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+          </div>
+        </div>
+
+        {/* ===== Nav Menu ===== */}
+        <div
+          style={{
+            width: 62,
+            background: "rgba(0,0,0,0.52)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            backdropFilter: "blur(4px)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.26)",
+            borderRadius: 999,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            padding: "9px 0",
+            gap: 8,
+            overflow: "hidden",
+            height: isNavMenuOpen ? 218 : 62,
+            transition: "height 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+          }}
+        >
+          {/* Nav Head */}
+          <button
+            title="Navegación"
+            onClick={() => setIsNavMenuOpen(!isNavMenuOpen)}
+            style={{
+              width: 44,
+              height: 44,
+              flexShrink: 0,
+              borderRadius: "50%",
+              border: "none",
+              background: isNavMenuOpen ? "rgba(51,158,234,0.88)" : "transparent",
+              color: "white",
+              fontWeight: 700,
+              fontSize: 14,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "background 0.15s, color 0.15s",
+            }}
+            onMouseOver={(e) => {
+              if (!isNavMenuOpen) e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+            }}
+            onMouseOut={(e) => {
+              if (!isNavMenuOpen) e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="34" height="26" viewBox="0 0 36 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 3 12 9 6" />
+              <line x1="15" y1="9" x2="21" y2="15" />
+              <line x1="21" y1="9" x2="15" y2="15" />
+              <polyline points="27 6 33 12 27 18" />
+            </svg>
+          </button>
+
+          {/* Nav Controls */}
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 8,
+            opacity: isNavMenuOpen ? 1 : 0,
+            pointerEvents: isNavMenuOpen ? "auto" : "none",
+            transition: "opacity 0.3s",
+          }}>
+            <button
+              type="button"
+              title={
+                hasSiblingImages
+                  ? "Imagen anterior"
+                  : "Sin micrografías hermanas"
+              }
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: "50%",
+                border: "none",
+                background: "rgba(0,0,0,0.56)",
+                color: "white",
+                cursor: hasSiblingImages ? "pointer" : "default",
+                lineHeight: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "background 0.15s",
+                opacity: hasSiblingImages ? 1 : 0.55,
+              }}
+              onMouseDown={(e) => { if (hasSiblingImages) e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+              onMouseUp={(e) => { if (hasSiblingImages) e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!hasSiblingImages) return;
+                setCurrentIndex((p) => (p > 0 ? p - 1 : images.length - 1));
+              }}
+              onMouseOver={(e) => {
+                if (!hasSiblingImages) return;
+                e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+              }}
+              onMouseOut={(e) => {
+                if (!hasSiblingImages) return;
+                e.currentTarget.style.background = "rgba(0,0,0,0.56)";
+              }}
+            >
+              <ArrowLeftIcon />
+            </button>
+
+            <button
+              type="button"
+              title={
+                hasSiblingImages
+                  ? "Imagen siguiente"
+                  : "Sin micrografías hermanas"
+              }
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: "50%",
+                border: "none",
+                background: "rgba(0,0,0,0.56)",
+                color: "white",
+                cursor: hasSiblingImages ? "pointer" : "default",
+                lineHeight: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "background 0.15s",
+                opacity: hasSiblingImages ? 1 : 0.55,
+              }}
+              onMouseDown={(e) => { if (hasSiblingImages) e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+              onMouseUp={(e) => { if (hasSiblingImages) e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!hasSiblingImages) return;
+                setCurrentIndex((p) => (p < images.length - 1 ? p + 1 : 0));
+              }}
+              onMouseOver={(e) => {
+                if (!hasSiblingImages) return;
+                e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+              }}
+              onMouseOut={(e) => {
+                if (!hasSiblingImages) return;
+                e.currentTarget.style.background = "rgba(0,0,0,0.56)";
+              }}
+            >
+              <ArrowRightIcon />
+            </button>
+            <button
+              title="Cerrar"
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: "50%",
+                border: "none",
+                background: "rgba(0,0,0,0.56)",
+                color: "white",
+                cursor: "pointer",
+                lineHeight: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "background 0.15s",
+              }}
+              onClick={onClose}
+              onMouseOver={(e) =>
+                (e.currentTarget.style.background = "rgba(255,0,0,1)")
+              }
+              onMouseOut={(e) =>
+                (e.currentTarget.style.background = "rgba(0,0,0,0.56)")
+              }
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        </div>
+
+        {/* ===== Info Button ===== */}
+        <div
+          style={{
+            width: 62,
+            background: "rgba(0,0,0,0.52)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            backdropFilter: "blur(4px)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.26)",
+            borderRadius: 999,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            padding: "9px 0",
+          }}
+        >
+          <button
+            title="Atajos de teclado"
+            onClick={() => setShowShortcutsModal(true)}
+            style={{
+              width: 44,
+              height: 44,
+              flexShrink: 0,
+              borderRadius: "50%",
+              border: "none",
+              background: "transparent",
+              color: "white",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "background 0.15s",
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = "rgba(51,158,234,0.78)"}
+            onMouseOut={(e) => e.currentTarget.style.background = "transparent"}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          </button>
+        </div>
       </div>
 
       {/* ===== Right context panel — header/main/footer, 80% height ===== */}
       <div
         style={{
-          position: "absolute",
-          left: contextCenterX,
-          top: "50%",
-          transform: "translate(-50%, -50%)",
+          gridColumn: "3",
+          gridRow: "1",
           zIndex: 3,
-          width: Math.max(150, contextGapWidth - 20),
+          width: "100%",
+          maxWidth: 480,
           height: "80%",
-          pointerEvents: "none",
+          pointerEvents: "auto",
           display: "flex",
           flexDirection: "column",
+          justifySelf: "start",
         }}
       >
         {/* ---- HEADER (25%) ---- */}
@@ -3522,6 +4127,82 @@ export function ImageLightboxCarousel({
                       ) : (
                         <span>Arrastra sobre la imagen para medir.</span>
                       )}
+                      {/* Stored measurements list */}
+                      {measurements.length > 0 && (
+                        <div style={{ width: "50%", marginTop: 8, borderTop: "1px solid rgba(255,255,255,0.15)", paddingTop: 8 }}>
+                          <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                            Mediciones ({measurements.length})
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 180, overflowY: "auto" }}>
+                            {measurements.map((m, i) => (
+                              <div
+                                key={m.id}
+                                onClick={() => setSelectedMeasurementId(m.id === selectedMeasurementId ? null : m.id)}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  padding: "4px 6px",
+                                  borderRadius: 6,
+                                  background: m.id === selectedMeasurementId ? "rgba(51,158,234,0.3)" : "rgba(255,255,255,0.06)",
+                                  cursor: "pointer",
+                                  transition: "background 0.15s",
+                                  fontSize: "0.75rem",
+                                  textAlign: "left",
+                                }}
+                              >
+                                <div style={{ width: 10, height: 10, borderRadius: "50%", background: m.color, flexShrink: 0 }} />
+                                <span style={{ flex: 1, color: "white" }}>
+                                  #{i + 1}: {m.distanceUm != null ? `${m.distanceUm.toFixed(2)} µm` : `${m.distancePx.toFixed(1)} px`}
+                                </span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMeasurements(prev => prev.filter(x => x.id !== m.id));
+                                    if (selectedMeasurementId === m.id) setSelectedMeasurementId(null);
+                                  }}
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    color: "rgba(255,255,255,0.4)",
+                                    cursor: "pointer",
+                                    padding: 2,
+                                    lineHeight: 0,
+                                    transition: "color 0.15s",
+                                  }}
+                                  onMouseOver={(e) => { e.currentTarget.style.color = "#ff6666"; }}
+                                  onMouseOut={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }}
+                                  title="Eliminar medición"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          {measurements.length > 1 && (
+                            <button
+                              onClick={() => { setMeasurements([]); setSelectedMeasurementId(null); }}
+                              style={{
+                                marginTop: 6,
+                                background: "rgba(255,100,100,0.15)",
+                                border: "1px solid rgba(255,100,100,0.3)",
+                                color: "#ff9999",
+                                borderRadius: 6,
+                                padding: "4px 8px",
+                                fontSize: "0.72rem",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                width: "100%",
+                                transition: "background 0.15s",
+                              }}
+                              onMouseOver={(e) => { e.currentTarget.style.background = "rgba(255,100,100,0.25)"; }}
+                              onMouseOut={(e) => { e.currentTarget.style.background = "rgba(255,100,100,0.15)"; }}
+                            >
+                              Borrar todas
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </>
                   ) : (
                     <span>
@@ -3656,9 +4337,12 @@ export function ImageLightboxCarousel({
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem" }}>
               <span style={{ color: "rgba(255,255,255,0.7)" }}>Ratio:</span>
               <span style={{ fontWeight: 600 }}>{calibrationRatio ? `${calibrationRatio.toFixed(4)} µm/px` : "-"}</span>
+              <span style={{ fontSize: "0.55rem", fontWeight: 800, marginTop: 4, letterSpacing: 0.5, opacity: 0.9 }}>ASTM</span>
             </div>
           </div>
         </div>
+
+
       </div>
 
       {/* ---- MODAL: Confirm calibration ---- */}
@@ -3907,6 +4591,46 @@ export function ImageLightboxCarousel({
           </div>
         </div>
       )}
+
+      {showShortcutsModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+          <div className="absolute inset-0 bg-[#10243f66] backdrop-blur-sm" onClick={() => setShowShortcutsModal(false)} />
+          <div className="relative bg-white rounded-[28px] shadow-xl border border-[#10243f14] max-w-md w-[90%] overflow-hidden p-8 text-left">
+            <h2 className="m-0 mb-6 text-[#10243f] text-2xl font-bold flex items-center gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[#339eea]"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><line x1="6" y1="8" x2="6" y2="8"></line><line x1="10" y1="8" x2="10" y2="8"></line><line x1="14" y1="8" x2="14" y2="8"></line><line x1="18" y1="8" x2="18" y2="8"></line><line x1="8" y1="12" x2="8" y2="12"></line><line x1="12" y1="12" x2="12" y2="12"></line><line x1="16" y1="12" x2="16" y2="12"></line><line x1="7" y1="16" x2="17" y2="16"></line></svg>
+              Atajos de teclado
+            </h2>
+            <ul className="list-none p-0 m-0 space-y-4 text-[#4d6684]">
+              <li className="flex justify-between items-center border-b border-[#10243f14] pb-3">
+                <span>Siguiente imagen</span>
+                <span className="bg-[#f0f4f8] text-[#10243f] px-2 py-1 rounded-md font-mono font-bold text-sm">Flecha Derecha</span>
+              </li>
+              <li className="flex justify-between items-center border-b border-[#10243f14] pb-3">
+                <span>Imagen anterior</span>
+                <span className="bg-[#f0f4f8] text-[#10243f] px-2 py-1 rounded-md font-mono font-bold text-sm">Flecha Izquierda</span>
+              </li>
+              <li className="flex justify-between items-center border-b border-[#10243f14] pb-3">
+                <span>Acercar / Alejar</span>
+                <span className="bg-[#f0f4f8] text-[#10243f] px-2 py-1 rounded-md font-mono font-bold text-sm">Rueda del Ratón</span>
+              </li>
+              <li className="flex justify-between items-center border-b border-[#10243f14] pb-3">
+                <span>Restablecer zoom y posición</span>
+                <span className="bg-[#f0f4f8] text-[#10243f] px-2 py-1 rounded-md font-mono font-bold text-sm">Doble Clic</span>
+              </li>
+              <li className="flex justify-between items-center">
+                <span>Salir del editor</span>
+                <span className="bg-[#f0f4f8] text-[#10243f] px-2 py-1 rounded-md font-mono font-bold text-sm">Esc</span>
+              </li>
+            </ul>
+            <button
+              onClick={() => setShowShortcutsModal(false)}
+              className="mt-8 px-8 py-3 rounded-xl bg-[#339eea] hover:bg-[#288ad3] text-white font-semibold text-base cursor-pointer transition-colors border-none w-full shadow-[0_4px_12px_rgba(51,158,234,0.3)] hover:translate-y-[-2px]"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3949,6 +4673,20 @@ export default function FileManager({
   const [showAdminLegend, setShowAdminLegend] = useState(false);
   const [showGalleryLegend, setShowGalleryLegend] = useState(false);
   const [showReportLegendModal, setShowReportLegendModal] = useState(false);
+
+  // Close legend dropdowns on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-legend-dropdown]') && !target.closest('[data-legend-trigger]')) {
+        setShowAdminLegend(false);
+        setShowGalleryLegend(false);
+        setShowReportLegendModal(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const [companyEnabled, setCompanyEnabled] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
@@ -5900,18 +6638,90 @@ export default function FileManager({
           >
         <div
           className="px-4 py-2.5 border-b border-[#10243f1a] flex justify-between items-center"
-          style={{ flexShrink: 0 }}
+          style={{ flexShrink: 0, position: "relative" }}
         >
           <div className="flex items-center gap-2">
             <h3 className="text-base font-bold text-[#10243f] m-0">Administrador</h3>
             <button 
-              onClick={(e) => { e.stopPropagation(); setShowAdminLegend(true); }}
+              data-legend-trigger
+              onClick={(e) => { e.stopPropagation(); setShowAdminLegend(prev => !prev); setShowGalleryLegend(false); setShowReportLegendModal(false); }}
               className="flex items-center justify-center w-7 h-7 rounded-lg bg-transparent border-none text-[#339eea] cursor-pointer transition-all hover:bg-[#eef8ff] hover:-translate-y-0.5"
               title="Leyenda de íconos"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
             </button>
           </div>
+          {showAdminLegend && (
+            <div
+              data-legend-dropdown
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                zIndex: 50,
+                marginTop: 4,
+                background: "white",
+                borderRadius: 12,
+                boxShadow: "0 8px 32px rgba(16,36,63,0.18)",
+                border: "1px solid rgba(16,36,63,0.1)",
+                overflow: "hidden",
+                animation: "dropdownFadeIn 0.18s ease-out",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 py-3 border-b border-gray-100 flex justify-between items-center bg-[#f8fbff]">
+                <h3 className="m-0 text-[#10243f] text-sm font-bold">Leyenda Administrador</h3>
+                <button onClick={() => setShowAdminLegend(false)} className="text-gray-400 hover:text-gray-600 bg-transparent border-none cursor-pointer">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+              </div>
+              <div className="p-4 max-h-[50vh] overflow-y-auto">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {ENABLE_AUTOCALIBRATION && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '3px 5px', borderRadius: 4, background: 'rgba(22,163,74,0.15)', border: '1px solid #16a34a', color: '#16a34a', lineHeight: 1 }}>IA</span>
+                        <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Autocalibración exitosa</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '3px 5px', borderRadius: 4, background: 'rgba(232,163,23,0.15)', border: '1px solid #e8a317', color: '#e8a317', lineHeight: 1 }}>IA</span>
+                        <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Autocalibrando (o en cola)</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '3px 5px', borderRadius: 4, background: 'rgba(248,113,113,0.15)', border: '1px solid #f87171', color: '#f87171', lineHeight: 1 }}>IA</span>
+                        <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Error en autocalibración</span>
+                      </div>
+                    </>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ color: '#16a34a', padding: '2px 4px', display: 'flex' }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </span>
+                    <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Calibración Manual exitosa</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ display: "flex", padding: "2px", borderRadius: 4, background: "rgba(22,163,74,0.15)", border: "1px solid #16a34a", color: "#16a34a", lineHeight: 1 }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 16l4-4 3 3 6-7" /></svg>
+                    </span>
+                    <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Gráfico de medición disponible</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ display: "flex", padding: "2px", borderRadius: 4, background: "rgba(232,163,23,0.15)", border: "1px solid #e8a317", color: "#e8a317", lineHeight: 1 }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 16l4-4 3 3 6-7" /></svg>
+                    </span>
+                    <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Procesando gráfico...</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ display: "flex", padding: "2px", borderRadius: 4, background: "rgba(248,113,113,0.15)", border: "1px solid #f87171", color: "#f87171", lineHeight: 1 }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 16l4-4 3 3 6-7" /></svg>
+                    </span>
+                    <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Fallo al generar gráfico</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Scrollable tree */}
@@ -6099,14 +6909,15 @@ export default function FileManager({
           >
         <div
           className="px-4 py-2.5 border-b border-[#10243f1a] flex justify-between items-center"
-          style={{ flexShrink: 0 }}
+          style={{ flexShrink: 0, position: "relative" }}
         >
           <div className="flex items-center gap-2">
             <h3 className="text-base font-bold text-[#10243f] m-0">
               {galleryTitle}
             </h3>
             <button 
-              onClick={(e) => { e.stopPropagation(); setShowGalleryLegend(true); }}
+              data-legend-trigger
+              onClick={(e) => { e.stopPropagation(); setShowGalleryLegend(prev => !prev); setShowAdminLegend(false); setShowReportLegendModal(false); }}
               className="flex items-center justify-center w-7 h-7 rounded-lg bg-transparent border-none text-[#339eea] cursor-pointer transition-all hover:bg-[#eef8ff] hover:-translate-y-0.5"
               title="Leyenda de íconos"
             >
@@ -6116,6 +6927,83 @@ export default function FileManager({
           <span className="text-[10px] font-bold bg-[#dff1ff] text-[#339eea] py-1 px-2.5 rounded-full">
             {galleryImages.length} imágenes
           </span>
+          {showGalleryLegend && (
+            <div
+              data-legend-dropdown
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                zIndex: 50,
+                marginTop: 4,
+                background: "white",
+                borderRadius: 12,
+                boxShadow: "0 8px 32px rgba(16,36,63,0.18)",
+                border: "1px solid rgba(16,36,63,0.1)",
+                overflow: "hidden",
+                animation: "dropdownFadeIn 0.18s ease-out",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 py-3 border-b border-gray-100 flex justify-between items-center bg-[#f8fbff]">
+                <h3 className="m-0 text-[#10243f] text-sm font-bold">Leyenda Galería</h3>
+                <button onClick={() => setShowGalleryLegend(false)} className="text-gray-400 hover:text-gray-600 bg-transparent border-none cursor-pointer">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+              </div>
+              <div className="p-4 max-h-[50vh] overflow-y-auto">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {ENABLE_AUTOCALIBRATION && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ background: 'rgba(22, 163, 74, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> IA
+                        </div>
+                        <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Autocalibración exitosa</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ background: 'rgba(232, 163, 23, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <div style={{width:6,height:6,borderRadius:"50%",background:"white"}}/> IA
+                        </div>
+                        <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Autocalibrando (o en cola)</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ background: 'rgba(220, 38, 38, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> IA
+                        </div>
+                        <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Error en autocalibración</span>
+                      </div>
+                    </>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ background: 'rgba(22, 163, 74, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> CM
+                    </div>
+                    <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Calibración Manual exitosa</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ background: 'rgba(22, 163, 74, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 16l4-4 3 3 6-7" /></svg>
+                    </div>
+                    <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Gráfico de medición disponible</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ background: 'rgba(232, 163, 23, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 16l4-4 3 3 6-7" /></svg>
+                    </div>
+                    <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Procesando gráfico...</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ background: 'rgba(220, 38, 38, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 16l4-4 3 3 6-7" /></svg>
+                    </div>
+                    <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Fallo al generar gráfico</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
           <div
@@ -6239,17 +7127,76 @@ export default function FileManager({
             }}
           >
             <div
-              className="px-4 py-2.5 border-b border-[#10243f1a] flex items-center gap-2"
-              style={{ flexShrink: 0 }}
+              className="px-4 py-2.5 border-b border-[#10243f1a] flex justify-between items-center"
+              style={{ flexShrink: 0, position: "relative" }}
             >
-              <h3 className="text-base font-bold text-[#10243f] m-0">Informes</h3>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setShowReportLegendModal(true); }}
-                className="flex items-center justify-center w-6 h-6 rounded-lg bg-transparent border-none text-[#339eea] cursor-pointer transition-all hover:bg-[#eef8ff] hover:-translate-y-0.5"
-                title="Leyenda de estados"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-              </button>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-[#10243f] m-0">Informes</h3>
+                <button 
+                  data-legend-trigger
+                  onClick={(e) => { e.stopPropagation(); setShowReportLegendModal(prev => !prev); setShowAdminLegend(false); setShowGalleryLegend(false); }}
+                  className="flex items-center justify-center w-7 h-7 rounded-lg bg-transparent border-none text-[#339eea] cursor-pointer transition-all hover:bg-[#eef8ff] hover:-translate-y-0.5"
+                  title="Leyenda de estados"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                </button>
+              </div>
+              {showReportLegendModal && (
+                <div
+                  data-legend-dropdown
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    zIndex: 50,
+                    marginTop: 4,
+                    background: "white",
+                    borderRadius: 12,
+                    boxShadow: "0 8px 32px rgba(16,36,63,0.18)",
+                    border: "1px solid rgba(16,36,63,0.1)",
+                    overflow: "hidden",
+                    animation: "dropdownFadeIn 0.18s ease-out",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="px-5 py-3 border-b border-gray-100 flex justify-between items-center bg-[#f8fbff]">
+                    <h3 className="m-0 text-[#10243f] text-sm font-bold">Leyenda Informes</h3>
+                    <button onClick={() => setShowReportLegendModal(false)} className="text-gray-400 hover:text-gray-600 bg-transparent border-none cursor-pointer">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                  </div>
+                  <div className="p-4 max-h-[50vh] overflow-y-auto">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ display: "flex", padding: "2px", borderRadius: 4, background: "rgba(59, 130, 246, 0.15)", border: "1px solid #3b82f6", color: "#3b82f6", lineHeight: 1 }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        </span>
+                        <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>El informe está en proceso.</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ color: '#10b981', padding: '2px 4px', display: 'flex' }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                          </svg>
+                        </span>
+                        <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Completado exitosamente.</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ color: '#ef4444', padding: '2px 4px', display: 'flex' }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                          </svg>
+                        </span>
+                        <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Error al generar el informe.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: 14 }}>
@@ -6524,10 +7471,13 @@ export default function FileManager({
           >
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
               <div
-                className="px-4 py-2.5 border-b border-[#10243f1a] flex items-center"
-                style={{ flexShrink: 0 }}
+                className="px-4 py-2.5 border-b border-[#10243f1a] flex justify-between items-center"
+                style={{ flexShrink: 0, position: "relative" }}
               >
-                <h3 className="text-base font-bold text-[#10243f] m-0">Asistente</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-[#10243f] m-0">Asistente</h3>
+                  <div className="w-7 h-7" style={{ visibility: "hidden" }} />
+                </div>
               </div>
               <div style={{ flex: 1, overflow: 'hidden' }}>
                 <ChatPanel />
@@ -6835,127 +7785,7 @@ export default function FileManager({
           document.body,
         )}
 
-      {showAdminLegend && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-          <div className="absolute inset-0 bg-[#10243f66] backdrop-blur-sm" onClick={() => setShowAdminLegend(false)} />
-          <div className="relative bg-white rounded-2xl shadow-xl border border-[#10243f14] w-[400px] overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-[#f8fbff]">
-              <h3 className="m-0 text-[#10243f] text-lg font-bold">Leyenda Administrador</h3>
-              <button onClick={() => setShowAdminLegend(false)} className="text-gray-400 hover:text-gray-600 bg-transparent border-none cursor-pointer">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-              </button>
-            </div>
-            <div className="p-6 max-h-[60vh] overflow-y-auto">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {ENABLE_AUTOCALIBRATION && (
-                  <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '3px 5px', borderRadius: 4, background: 'rgba(22,163,74,0.15)', border: '1px solid #16a34a', color: '#16a34a', lineHeight: 1 }}>IA</span>
-                      <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Autocalibración exitosa</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '3px 5px', borderRadius: 4, background: 'rgba(232,163,23,0.15)', border: '1px solid #e8a317', color: '#e8a317', lineHeight: 1 }}>IA</span>
-                      <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Autocalibrando (o en cola)</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '3px 5px', borderRadius: 4, background: 'rgba(248,113,113,0.15)', border: '1px solid #f87171', color: '#f87171', lineHeight: 1 }}>IA</span>
-                      <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Error en autocalibración</span>
-                    </div>
-                  </>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ color: '#16a34a', padding: '2px 4px', display: 'flex' }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                  </span>
-                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Calibración Manual exitosa</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ display: "flex", padding: "2px", borderRadius: 4, background: "rgba(22,163,74,0.15)", border: "1px solid #16a34a", color: "#16a34a", lineHeight: 1 }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 16l4-4 3 3 6-7" /></svg>
-                  </span>
-                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Gráfico de medición disponible</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ display: "flex", padding: "2px", borderRadius: 4, background: "rgba(232,163,23,0.15)", border: "1px solid #e8a317", color: "#e8a317", lineHeight: 1 }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 16l4-4 3 3 6-7" /></svg>
-                  </span>
-                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Procesando gráfico...</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ display: "flex", padding: "2px", borderRadius: 4, background: "rgba(248,113,113,0.15)", border: "1px solid #f87171", color: "#f87171", lineHeight: 1 }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 16l4-4 3 3 6-7" /></svg>
-                  </span>
-                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Fallo al generar gráfico</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {showGalleryLegend && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-          <div className="absolute inset-0 bg-[#10243f66] backdrop-blur-sm" onClick={() => setShowGalleryLegend(false)} />
-          <div className="relative bg-white rounded-2xl shadow-xl border border-[#10243f14] w-[400px] overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-[#f8fbff]">
-              <h3 className="m-0 text-[#10243f] text-lg font-bold">Leyenda Galería</h3>
-              <button onClick={() => setShowGalleryLegend(false)} className="text-gray-400 hover:text-gray-600 bg-transparent border-none cursor-pointer">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-              </button>
-            </div>
-            <div className="p-6 max-h-[60vh] overflow-y-auto">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {ENABLE_AUTOCALIBRATION && (
-                  <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ background: 'rgba(22, 163, 74, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> IA
-                      </div>
-                      <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Autocalibración exitosa</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ background: 'rgba(232, 163, 23, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <div style={{width:6,height:6,borderRadius:"50%",background:"white"}}/> IA
-                      </div>
-                      <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Autocalibrando (o en cola)</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ background: 'rgba(220, 38, 38, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> IA
-                      </div>
-                      <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Error en autocalibración</span>
-                    </div>
-                  </>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ background: 'rgba(22, 163, 74, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> CM
-                  </div>
-                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Calibración Manual exitosa</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ background: 'rgba(22, 163, 74, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 16l4-4 3 3 6-7" /></svg>
-                  </div>
-                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Gráfico de medición disponible</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ background: 'rgba(232, 163, 23, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 16l4-4 3 3 6-7" /></svg>
-                  </div>
-                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Procesando gráfico...</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ background: 'rgba(220, 38, 38, 0.92)', color: 'white', fontSize: '0.66rem', fontWeight: 700, padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 16l4-4 3 3 6-7" /></svg>
-                  </div>
-                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Fallo al generar gráfico</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showDisabledCompanyModal && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center">
@@ -6987,6 +7817,8 @@ export default function FileManager({
           </div>
         </div>
       )}
+
+
 
       <style
         dangerouslySetInnerHTML={{
@@ -7045,55 +7877,13 @@ export default function FileManager({
           from { transform: scaleX(1); }
           to { transform: scaleX(0); }
         }
+        @keyframes dropdownFadeIn {
+          from { opacity: 0; transform: translateY(-8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
       `,
         }}
       />
-      {/* Legend Modal */}
-      {showReportLegendModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-          <div className="absolute inset-0 bg-[#10243f66] backdrop-blur-sm" onClick={() => setShowReportLegendModal(false)} />
-          <div className="relative bg-white rounded-2xl shadow-xl border border-[#10243f14] w-[400px] overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-[#f8fbff]">
-              <h3 className="m-0 text-[#10243f] text-lg font-bold">Leyenda Informes</h3>
-              <button onClick={() => setShowReportLegendModal(false)} className="text-gray-400 hover:text-gray-600 bg-transparent border-none cursor-pointer">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-              </button>
-            </div>
-            
-            <div className="p-6 max-h-[60vh] overflow-y-auto">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ display: "flex", padding: "2px", borderRadius: 4, background: "rgba(59, 130, 246, 0.15)", border: "1px solid #3b82f6", color: "#3b82f6", lineHeight: 1 }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                  </span>
-                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>El informe está en proceso.</span>
-                </div>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ color: '#10b981', padding: '2px 4px', display: 'flex' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                    </svg>
-                  </span>
-                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Completado exitosamente.</span>
-                </div>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ color: '#ef4444', padding: '2px 4px', display: 'flex' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="15" y1="9" x2="9" y2="15"></line>
-                      <line x1="9" y1="9" x2="15" y2="15"></line>
-                    </svg>
-                  </span>
-                  <span style={{ fontSize: '0.9rem', color: '#4d6684' }}>Error al generar el informe.</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

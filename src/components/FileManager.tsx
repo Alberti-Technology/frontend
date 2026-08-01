@@ -2813,7 +2813,6 @@ export function ImageLightboxCarousel({
         <aside
           style={{
             width: 62,
-            minHeight: currentImageIsCalibrable ? 293 : 112,
             height: "fit-content",
             maxHeight: `calc(100vh - 40px)`, // Ensure it fits viewport
             borderRadius: 999,
@@ -3088,6 +3087,7 @@ export function ImageLightboxCarousel({
                       flexDirection: "column",
                       alignItems: "center",
                       gap: 12,
+                      width: 56,
                     }}
                   >
                     <span style={{ 
@@ -3096,10 +3096,13 @@ export function ImageLightboxCarousel({
                       color: "white", 
                       userSelect: "none",
                       background: "rgba(0,0,0,0.56)",
-                      padding: "4px 8px",
+                      padding: "4px 0",
                       borderRadius: 12,
                       border: "1px solid rgba(255,255,255,0.1)",
-                      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)"
+                      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
+                      width: "100%",
+                      textAlign: "center",
+                      display: "inline-block",
                     }}>
                       {(inclusionsThreshold * 100).toFixed(0)}%
                     </span>
@@ -3172,23 +3175,15 @@ export function ImageLightboxCarousel({
                   <PencilIcon />
                 </button>
                 
-                {/* Vertical drawer with tools and color picker trigger */}
                 <div style={{ 
-                    display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
                     overflow: "hidden",
                     maxHeight: isPencilMenuOpen ? 300 : 0,
                     opacity: isPencilMenuOpen ? 1 : 0,
                     transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                    marginTop: isPencilMenuOpen ? -22 : 0,
-                    paddingTop: isPencilMenuOpen ? 30 : 0,
-                    paddingBottom: isPencilMenuOpen ? 8 : 0,
-                    background: "rgba(0,0,0,0.3)",
-                    borderRadius: 24,
-                    border: isPencilMenuOpen ? "1px solid rgba(255,255,255,0.1)" : "none",
-                    pointerEvents: isPencilMenuOpen ? "auto" : "none",
-                    width: 48,
-                    zIndex: 9
+                    width: "100%",
                   }}>
+                    <div style={{ width: 44, height: 1, background: "rgba(255,255,255,0.1)", marginTop: 2, flexShrink: 0 }} />
                     {/* Color picker dot triggering the modalcito */}
                     <div
                       onClick={(e) => {
@@ -3197,8 +3192,8 @@ export function ImageLightboxCarousel({
                       }}
                       title="Elegir Color"
                       style={{
-                        width: 28,
-                        height: 28,
+                        width: 36,
+                        height: 36,
                         borderRadius: "50%",
                         background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)",
                         cursor: "pointer",
@@ -3217,8 +3212,8 @@ export function ImageLightboxCarousel({
                     <button
                       title="Goma (borrar máscara)"
                       style={{
-                        width: 36,
-                        height: 36,
+                        width: 44,
+                        height: 44,
                         borderRadius: "50%",
                         border: "none",
                         background:
@@ -3252,8 +3247,8 @@ export function ImageLightboxCarousel({
                     <button
                       title="Limpiar dibujo"
                       style={{
-                        width: 36,
-                        height: 36,
+                        width: 44,
+                        height: 44,
                         borderRadius: "50%",
                         border: "none",
                         background: "rgba(0,0,0,0.4)",
@@ -3305,14 +3300,6 @@ export function ImageLightboxCarousel({
                       gap: 12,
                     }}
                   >
-                    <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: "0.05em", textTransform: "uppercase", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      Color del trazo
-                      <button 
-                        onClick={() => setShowColorPicker(false)}
-                        style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", cursor: "pointer", padding: 0 }}
-                      >×</button>
-                    </div>
-                    
                     {/* Swatches Grid */}
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
                       {["#ffffff", "#ff3b30", "#ff9500", "#ffcc00", "#4cd964", "#5ac8fa", "#007aff", "#5856d6", "#ff2d55", "#000000"].map((c) => (
@@ -3485,11 +3472,13 @@ export function ImageLightboxCarousel({
               });
             }}
             onMouseOver={(e) => {
-              if (!currentMeasurementOverlayUrl || isMeasurementOverlayVisible || (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible)) return;
+              const isDisabled = !currentMeasurementOverlayUrl || ((activeSidebarTool === "measurement" || activeSidebarTool === "calibration" || (activeSidebarTool === "mask" && maskEditTool !== null)) && !isMeasurementOverlayVisible) || !isAstmMenuOpen;
+              if (isDisabled || isMeasurementOverlayVisible) return;
               e.currentTarget.style.background = "rgba(51,158,234,0.78)";
             }}
             onMouseOut={(e) => {
-              if (!currentMeasurementOverlayUrl || isMeasurementOverlayVisible || (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible)) return;
+              const isDisabled = !currentMeasurementOverlayUrl || ((activeSidebarTool === "measurement" || activeSidebarTool === "calibration" || (activeSidebarTool === "mask" && maskEditTool !== null)) && !isMeasurementOverlayVisible) || !isAstmMenuOpen;
+              if (isDisabled || isMeasurementOverlayVisible) return;
               e.currentTarget.style.background = "rgba(0,0,0,0.56)";
             }}
           >
@@ -3517,18 +3506,18 @@ export function ImageLightboxCarousel({
           <button
             type="button"
             title="Acercar (Zoom In)"
-            onMouseDown={(e) => { e.stopPropagation(); startContinuousZoom("in"); }}
-            onMouseUp={(e) => { e.stopPropagation(); stopContinuousZoom(); }}
-            onMouseLeave={(e) => { stopContinuousZoom(); e.currentTarget.style.background = "transparent"; }}
-            onTouchStart={(e) => { e.stopPropagation(); startContinuousZoom("in"); }}
-            onTouchEnd={(e) => { e.stopPropagation(); stopContinuousZoom(); }}
+            onMouseDown={(e) => { e.stopPropagation(); startContinuousZoom("in"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+            onMouseUp={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+            onMouseLeave={(e) => { stopContinuousZoom(); e.currentTarget.style.background = "rgba(0,0,0,0.56)"; }}
+            onTouchStart={(e) => { e.stopPropagation(); startContinuousZoom("in"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+            onTouchEnd={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
             style={{
-              width: 40, height: 40, borderRadius: "50%", border: "none",
-              background: "transparent", color: "white", cursor: "pointer",
+              width: 44, height: 44, borderRadius: "50%", border: "none",
+              background: "rgba(0,0,0,0.56)", color: "white", cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
               transition: "background 0.15s",
             }}
-            onMouseOver={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
+            onMouseOver={(e) => { e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
           </button>
@@ -3547,18 +3536,18 @@ export function ImageLightboxCarousel({
           <button
             type="button"
             title="Alejar (Zoom Out)"
-            onMouseDown={(e) => { e.stopPropagation(); startContinuousZoom("out"); }}
-            onMouseUp={(e) => { e.stopPropagation(); stopContinuousZoom(); }}
-            onMouseLeave={(e) => { stopContinuousZoom(); e.currentTarget.style.background = "transparent"; }}
-            onTouchStart={(e) => { e.stopPropagation(); startContinuousZoom("out"); }}
-            onTouchEnd={(e) => { e.stopPropagation(); stopContinuousZoom(); }}
+            onMouseDown={(e) => { e.stopPropagation(); startContinuousZoom("out"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+            onMouseUp={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
+            onMouseLeave={(e) => { stopContinuousZoom(); e.currentTarget.style.background = "rgba(0,0,0,0.56)"; }}
+            onTouchStart={(e) => { e.stopPropagation(); startContinuousZoom("out"); e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+            onTouchEnd={(e) => { e.stopPropagation(); stopContinuousZoom(); e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
             style={{
-              width: 40, height: 40, borderRadius: "50%", border: "none",
-              background: "transparent", color: "white", cursor: "pointer",
+              width: 44, height: 44, borderRadius: "50%", border: "none",
+              background: "rgba(0,0,0,0.56)", color: "white", cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
               transition: "background 0.15s",
             }}
-            onMouseOver={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
+            onMouseOver={(e) => { e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
           </button>
@@ -3592,7 +3581,7 @@ export function ImageLightboxCarousel({
                 height: 44,
                 borderRadius: "50%",
                 border: "none",
-                background: "transparent",
+                background: "rgba(0,0,0,0.56)",
                 color: "white",
                 cursor: hasSiblingImages ? "pointer" : "default",
                 lineHeight: 0,
@@ -3602,6 +3591,8 @@ export function ImageLightboxCarousel({
                 transition: "background 0.15s",
                 opacity: hasSiblingImages ? 1 : 0.55,
               }}
+              onMouseDown={(e) => { if (hasSiblingImages) e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+              onMouseUp={(e) => { if (hasSiblingImages) e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!hasSiblingImages) return;
@@ -3609,11 +3600,11 @@ export function ImageLightboxCarousel({
               }}
               onMouseOver={(e) => {
                 if (!hasSiblingImages) return;
-                e.currentTarget.style.background = "rgba(255,255,255,0.1)";
+                e.currentTarget.style.background = "rgba(51,158,234,0.78)";
               }}
               onMouseOut={(e) => {
                 if (!hasSiblingImages) return;
-                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.background = "rgba(0,0,0,0.56)";
               }}
             >
               <ArrowLeftIcon />
@@ -3631,7 +3622,7 @@ export function ImageLightboxCarousel({
                 height: 44,
                 borderRadius: "50%",
                 border: "none",
-                background: "transparent",
+                background: "rgba(0,0,0,0.56)",
                 color: "white",
                 cursor: hasSiblingImages ? "pointer" : "default",
                 lineHeight: 0,
@@ -3641,6 +3632,8 @@ export function ImageLightboxCarousel({
                 transition: "background 0.15s",
                 opacity: hasSiblingImages ? 1 : 0.55,
               }}
+              onMouseDown={(e) => { if (hasSiblingImages) e.currentTarget.style.background = "rgba(51,158,234,0.88)"; }}
+              onMouseUp={(e) => { if (hasSiblingImages) e.currentTarget.style.background = "rgba(51,158,234,0.78)"; }}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!hasSiblingImages) return;
@@ -3648,11 +3641,11 @@ export function ImageLightboxCarousel({
               }}
               onMouseOver={(e) => {
                 if (!hasSiblingImages) return;
-                e.currentTarget.style.background = "rgba(255,255,255,0.1)";
+                e.currentTarget.style.background = "rgba(51,158,234,0.78)";
               }}
               onMouseOut={(e) => {
                 if (!hasSiblingImages) return;
-                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.background = "rgba(0,0,0,0.56)";
               }}
             >
               <ArrowRightIcon />
@@ -7198,10 +7191,13 @@ export default function FileManager({
           >
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
               <div
-                className="px-4 py-2.5 border-b border-[#10243f1a] flex items-center"
-                style={{ flexShrink: 0 }}
+                className="px-4 py-2.5 border-b border-[#10243f1a] flex justify-between items-center"
+                style={{ flexShrink: 0, position: "relative" }}
               >
-                <h3 className="text-base font-bold text-[#10243f] m-0">Asistente</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-[#10243f] m-0">Asistente</h3>
+                  <div className="w-7 h-7" style={{ visibility: "hidden" }} />
+                </div>
               </div>
               <div style={{ flex: 1, overflow: 'hidden' }}>
                 <ChatPanel />

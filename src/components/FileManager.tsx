@@ -1469,6 +1469,8 @@ export function ImageLightboxCarousel({
 
   const [pencilColor, setPencilColor] = useState("#000000");
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [isPencilMenuOpen, setIsPencilMenuOpen] = useState(false);
+  const [showInclusionsSlider, setShowInclusionsSlider] = useState(false);
 
   // Zoom & Pan state
   const [zoomScale, setZoomScale] = useState(1);
@@ -2811,7 +2813,8 @@ export function ImageLightboxCarousel({
         <aside
           style={{
             width: 62,
-            minHeight: currentImageIsCalibrable ? 300 : 112,
+            minHeight: currentImageIsCalibrable ? 293 : 112,
+            height: "fit-content",
             maxHeight: `calc(100vh - 40px)`, // Ensure it fits viewport
             borderRadius: 999,
             padding: "9px 0",
@@ -3014,7 +3017,7 @@ export function ImageLightboxCarousel({
                 <MaskIcon />
               </button>
               {/* ---- Inclusions tool ---- */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+              <div style={{ position: "relative", display: "flex", justifyContent: "center", width: "100%" }}>
                 <button
                   title={
                     inclusionsLoadingByImageUrl?.[currentImage.url]
@@ -3045,6 +3048,11 @@ export function ImageLightboxCarousel({
                   onClick={() => onCheckMicrographLimit(() => {
                     setActiveSidebarTool((prev) => (prev === "overview" ? "mask" : prev));
                     if (onDetectInclusiones) {
+                      if (!inclusionsVisibleByImageUrl?.[currentImage.url]) {
+                        setShowInclusionsSlider(true);
+                      } else {
+                        setShowInclusionsSlider(false);
+                      }
                       void onDetectInclusiones(currentImage.url);
                     }
                   })}
@@ -3059,218 +3067,326 @@ export function ImageLightboxCarousel({
                 >
                   <InclusionsIcon />
                 </button>
-                <div style={{ 
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-                  overflow: "hidden",
-                  maxHeight: inclusionsVisibleByImageUrl?.[currentImage.url] ? 200 : 0,
-                  opacity: inclusionsVisibleByImageUrl?.[currentImage.url] ? 1 : 0,
-                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                  marginTop: inclusionsVisibleByImageUrl?.[currentImage.url] ? 4 : 0,
-                  pointerEvents: inclusionsVisibleByImageUrl?.[currentImage.url] ? "auto" : "none"
-                }}>
-                  <span style={{ 
-                    fontSize: 12, 
-                    fontWeight: "bold", 
-                    color: "white", 
-                    userSelect: "none",
-                    background: "rgba(0,0,0,0.56)",
-                    padding: "4px 8px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(255,255,255,0.1)"
-                  }}>
-                    {(inclusionsThreshold * 100).toFixed(0)}%
-                  </span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={inclusionsThreshold}
-                    onChange={(e) => setInclusionsThreshold(parseFloat(e.target.value))}
-                    title={`Threshold de confianza: ${(inclusionsThreshold * 100).toFixed(0)}%`}
+                
+                {/* Popover */}
+                {showInclusionsSlider && inclusionsVisibleByImageUrl?.[currentImage.url] && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
                     style={{
-                      height: 100,
-                      width: 40,
-                      writingMode: "vertical-lr",
-                      direction: "rtl",
-                      accentColor: "#339eea",
-                      cursor: "pointer",
-                      margin: 0
+                      position: "absolute",
+                      top: "50%",
+                      left: "calc(100% + 16px)",
+                      transform: "translateY(-50%)",
+                      zIndex: 60,
+                      background: "rgba(15, 17, 21, 0.95)",
+                      backdropFilter: "blur(16px)",
+                      borderRadius: 16,
+                      padding: "16px 8px",
+                      boxShadow: "0 20px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1)",
+                      animation: "dropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 12,
                     }}
-                  />
-                </div>
-              </div>
-              {/* ---- Pencil tool ---- */}
-              <div style={{ position: "relative" }}>
-              <button
-                title="Lápiz (pintar)"
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: "50%",
-                  border: "none",
-                  background:
-                    maskEditTool === "pencil"
-                      ? "rgba(51,158,234,0.88)"
-                      : "rgba(0,0,0,0.56)",
-                  color: "white",
-                  cursor: isMeasurementOverlayVisible ? "default" : "pointer",
-                  lineHeight: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  transition: "background 0.15s",
-                  opacity: isMeasurementOverlayVisible ? 0.4 : 1,
-                }}
-                disabled={isMeasurementOverlayVisible}
-                onClick={() => onCheckMicrographLimit(() => {
-                  setActiveSidebarTool("mask");
-                  setMaskEditTool((prev) =>
-                    prev === "pencil" ? null : "pencil",
-                  );
-                })}
-                onMouseOver={(e) => {
-                  if (maskEditTool === "pencil" || isMeasurementOverlayVisible) return;
-                  e.currentTarget.style.background = "rgba(51,158,234,0.78)";
-                }}
-                onMouseOut={(e) => {
-                  if (maskEditTool === "pencil") return;
-                  e.currentTarget.style.background = "rgba(0,0,0,0.56)";
-                }}
-              >
-                <PencilIcon />
-              </button>
-              
-              {/* Color picker vertical drawer */}
-              <div style={{ 
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-                  overflow: "hidden",
-                  maxHeight: maskEditTool === "pencil" ? 300 : 0,
-                  opacity: maskEditTool === "pencil" ? 1 : 0,
-                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                  marginTop: maskEditTool === "pencil" ? 4 : 0,
-                  pointerEvents: maskEditTool === "pencil" ? "auto" : "none"
-                }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "rgba(0,0,0,0.3)", padding: "8px 6px", borderRadius: 24, border: "1px solid rgba(255,255,255,0.1)" }}>
-                    <label
-                      title="Abrir paleta avanzada..."
+                  >
+                    <span style={{ 
+                      fontSize: 13, 
+                      fontWeight: "bold", 
+                      color: "white", 
+                      userSelect: "none",
+                      background: "rgba(0,0,0,0.56)",
+                      padding: "4px 8px",
+                      borderRadius: 12,
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)"
+                    }}>
+                      {(inclusionsThreshold * 100).toFixed(0)}%
+                    </span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={inclusionsThreshold}
+                      onChange={(e) => setInclusionsThreshold(parseFloat(e.target.value))}
+                      title={`Threshold de confianza: ${(inclusionsThreshold * 100).toFixed(0)}%`}
                       style={{
-                        position: "relative",
+                        height: 120,
+                        width: 40,
+                        writingMode: "vertical-lr",
+                        direction: "rtl",
+                        accentColor: "#339eea",
+                        cursor: "pointer",
+                        margin: 0
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              {/* ---- Pencil tool (Drawer Trigger) ---- */}
+              <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
+                <button
+                  title="Herramientas de Dibujo"
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: "50%",
+                    border: "none",
+                    background:
+                      isPencilMenuOpen
+                        ? "rgba(51,158,234,0.88)"
+                        : "rgba(0,0,0,0.56)",
+                    color: "white",
+                    cursor: isMeasurementOverlayVisible ? "default" : "pointer",
+                    lineHeight: 0,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    transition: "background 0.15s",
+                    opacity: isMeasurementOverlayVisible ? 0.4 : 1,
+                    zIndex: 10
+                  }}
+                  disabled={isMeasurementOverlayVisible}
+                  onClick={() => onCheckMicrographLimit(() => {
+                    setActiveSidebarTool("mask");
+                    setIsPencilMenuOpen(prev => {
+                      const next = !prev;
+                      if (next) {
+                        setMaskEditTool("pencil");
+                      } else {
+                        setMaskEditTool(null);
+                      }
+                      return next;
+                    });
+                  })}
+                  onMouseOver={(e) => {
+                    if (isPencilMenuOpen || isMeasurementOverlayVisible) return;
+                    e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+                  }}
+                  onMouseOut={(e) => {
+                    if (isPencilMenuOpen) return;
+                    e.currentTarget.style.background = "rgba(0,0,0,0.56)";
+                  }}
+                >
+                  <PencilIcon />
+                </button>
+                
+                {/* Vertical drawer with tools and color picker trigger */}
+                <div style={{ 
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+                    overflow: "hidden",
+                    maxHeight: isPencilMenuOpen ? 300 : 0,
+                    opacity: isPencilMenuOpen ? 1 : 0,
+                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                    marginTop: isPencilMenuOpen ? -22 : 0,
+                    paddingTop: isPencilMenuOpen ? 30 : 0,
+                    paddingBottom: isPencilMenuOpen ? 8 : 0,
+                    background: "rgba(0,0,0,0.3)",
+                    borderRadius: 24,
+                    border: isPencilMenuOpen ? "1px solid rgba(255,255,255,0.1)" : "none",
+                    pointerEvents: isPencilMenuOpen ? "auto" : "none",
+                    width: 48,
+                    zIndex: 9
+                  }}>
+                    {/* Color picker dot triggering the modalcito */}
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowColorPicker((prev) => !prev);
+                      }}
+                      title="Elegir Color"
+                      style={{
                         width: 28,
                         height: 28,
                         borderRadius: "50%",
                         background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)",
                         cursor: "pointer",
-                        overflow: "hidden",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         flexShrink: 0,
-                        boxShadow: "0 2px 5px rgba(0,0,0,0.5)"
+                        boxShadow: "0 2px 5px rgba(0,0,0,0.5)",
+                        marginTop: 4
                       }}
                     >
                       <div style={{ width: 18, height: 18, borderRadius: "50%", background: pencilColor, border: "2px solid rgba(255,255,255,0.9)", pointerEvents: "none" }} />
-                      <input
-                        type="color"
-                        value={pencilColor}
-                        onChange={(e) => setPencilColor(e.target.value)}
-                        style={{ opacity: 0, position: "absolute", width: "200%", height: "200%", top: "-50%", left: "-50%", cursor: "pointer" }}
-                      />
-                    </label>
+                    </div>
 
-                    <div style={{ width: "100%", height: 1, background: "rgba(255,255,255,0.1)" }} />
+                    <div style={{ width: "60%", height: 1, background: "rgba(255,255,255,0.1)" }} />
 
-                    {["#ffffff", "#ff3b30", "#ffcc00", "#4cd964", "#007aff", "#000000"].map((c) => (
-                      <div
-                        key={c}
-                        onClick={() => setPencilColor(c)}
+                    {/* ---- Eraser tool ---- */}
+                    <button
+                      title="Goma (borrar máscara)"
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: "50%",
+                        border: "none",
+                        background:
+                          maskEditTool === "eraser"
+                            ? "rgba(51,158,234,0.88)"
+                            : "rgba(0,0,0,0.4)",
+                        color: "white",
+                        cursor: "pointer",
+                        lineHeight: 0,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "background 0.15s",
+                      }}
+                      onClick={() => {
+                        setMaskEditTool((prev) =>
+                          prev === "eraser" ? "pencil" : "eraser",
+                        );
+                      }}
+                      onMouseOver={(e) => {
+                        if (maskEditTool === "eraser") return;
+                        e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+                      }}
+                      onMouseOut={(e) => {
+                        if (maskEditTool === "eraser") return;
+                        e.currentTarget.style.background = "rgba(0,0,0,0.4)";
+                      }}
+                    >
+                      <EraserIcon />
+                    </button>
+                    <button
+                      title="Limpiar dibujo"
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: "50%",
+                        border: "none",
+                        background: "rgba(0,0,0,0.4)",
+                        color: "white",
+                        cursor: isDrawingToolActive ? "pointer" : "default",
+                        lineHeight: 0,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "background 0.15s",
+                        opacity: isDrawingToolActive ? 1 : 0.45,
+                      }}
+                      disabled={!isDrawingToolActive}
+                      onClick={() => {
+                        if (!isDrawingToolActive) return;
+                        clearCurrentDrawing();
+                      }}
+                      onMouseOver={(e) => {
+                        if (!isDrawingToolActive) return;
+                        e.currentTarget.style.background = "rgba(51,158,234,0.78)";
+                      }}
+                      onMouseOut={(e) => {
+                        if (!isDrawingToolActive) return;
+                        e.currentTarget.style.background = "rgba(0,0,0,0.4)";
+                      }}
+                    >
+                      <TrashIcon />
+                    </button>
+                </div>
+
+                {/* Glassmorphism Color picker popover */}
+                {showColorPicker && isPencilMenuOpen && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: "absolute",
+                      top: 70,
+                      left: "calc(100% + 16px)",
+                      zIndex: 60,
+                      background: "rgba(15, 17, 21, 0.95)",
+                      backdropFilter: "blur(16px)",
+                      borderRadius: 16,
+                      padding: 16,
+                      boxShadow: "0 20px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1)",
+                      animation: "dropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                      width: 200,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12,
+                    }}
+                  >
+                    <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: "0.05em", textTransform: "uppercase", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      Color del trazo
+                      <button 
+                        onClick={() => setShowColorPicker(false)}
+                        style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", cursor: "pointer", padding: 0 }}
+                      >×</button>
+                    </div>
+                    
+                    {/* Swatches Grid */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+                      {["#ffffff", "#ff3b30", "#ff9500", "#ffcc00", "#4cd964", "#5ac8fa", "#007aff", "#5856d6", "#ff2d55", "#000000"].map((c) => (
+                        <div
+                          key={c}
+                          onClick={() => setPencilColor(c)}
+                          style={{
+                            aspectRatio: "1",
+                            borderRadius: "50%",
+                            background: c,
+                            cursor: "pointer",
+                            border: pencilColor.toLowerCase() === c ? "2px solid #339eea" : "2px solid rgba(255,255,255,0.15)",
+                            boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
+                            transform: pencilColor.toLowerCase() === c ? "scale(1.15)" : "scale(1)",
+                            transition: "all 0.2s",
+                          }}
+                        />
+                      ))}
+                    </div>
+
+                    <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "2px 0" }} />
+
+                    {/* Custom Color (Native Fallback beautifully wrapped) */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <label
+                        title="Abrir paleta avanzada..."
                         style={{
-                          width: 24,
-                          height: 24,
+                          position: "relative",
+                          width: 32,
+                          height: 32,
                           borderRadius: "50%",
-                          background: c,
+                          background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)",
                           cursor: "pointer",
-                          border: pencilColor.toLowerCase() === c ? "2px solid #339eea" : "2px solid rgba(255,255,255,0.15)",
-                          boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
-                          transform: pencilColor.toLowerCase() === c ? "scale(1.15)" : "scale(1)",
-                          transition: "all 0.2s",
-                          margin: "0 auto"
+                          overflow: "hidden",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          flexShrink: 0,
+                          boxShadow: "0 2px 5px rgba(0,0,0,0.5)"
                         }}
-                      />
-                    ))}
+                      >
+                        <div style={{ width: 22, height: 22, borderRadius: "50%", background: pencilColor, border: "2px solid rgba(255,255,255,0.9)", pointerEvents: "none" }} />
+                        <input
+                          type="color"
+                          value={pencilColor}
+                          onChange={(e) => setPencilColor(e.target.value)}
+                          style={{ opacity: 0, position: "absolute", width: "200%", height: "200%", top: "-50%", left: "-50%", cursor: "pointer" }}
+                        />
+                      </label>
+                      <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+                        <span style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>CÓDIGO HEX</span>
+                        <input 
+                          type="text" 
+                          value={pencilColor.toUpperCase()}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPencilColor(val);
+                          }}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "white",
+                            fontSize: "0.85rem",
+                            fontWeight: 600,
+                            fontFamily: "monospace",
+                            outline: "none",
+                            width: "100%",
+                            padding: 0,
+                            margin: 0,
+                          }}
+                        />
+                      </div>
+                    </div>
                   </div>
+                )}
               </div>
-              </div>
-              {/* ---- Eraser tool ---- */}
-              <button
-                title="Goma (borrar máscara)"
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: "50%",
-                  border: "none",
-                  background:
-                    maskEditTool === "eraser"
-                      ? "rgba(51,158,234,0.88)"
-                      : "rgba(0,0,0,0.56)",
-                  color: "white",
-                  cursor: isMeasurementOverlayVisible ? "default" : "pointer",
-                  lineHeight: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  transition: "background 0.15s",
-                  opacity: isMeasurementOverlayVisible ? 0.4 : 1,
-                }}
-                disabled={isMeasurementOverlayVisible}
-                onClick={() => onCheckMicrographLimit(() => {
-                  setActiveSidebarTool("mask");
-                  setMaskEditTool((prev) =>
-                    prev === "eraser" ? null : "eraser",
-                  );
-                })}
-                onMouseOver={(e) => {
-                  if (maskEditTool === "eraser" || isMeasurementOverlayVisible) return;
-                  e.currentTarget.style.background = "rgba(51,158,234,0.78)";
-                }}
-                onMouseOut={(e) => {
-                  if (maskEditTool === "eraser") return;
-                  e.currentTarget.style.background = "rgba(0,0,0,0.56)";
-                }}
-              >
-                <EraserIcon />
-              </button>
-              <button
-                title="Limpiar dibujo"
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: "50%",
-                  border: "none",
-                  background: "rgba(0,0,0,0.56)",
-                  color: "white",
-                  cursor: isDrawingToolActive ? "pointer" : "default",
-                  lineHeight: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  transition: "background 0.15s",
-                  opacity: isDrawingToolActive ? 1 : 0.45,
-                }}
-                disabled={!isDrawingToolActive}
-                onClick={() => onCheckMicrographLimit(() => {
-                  if (!isDrawingToolActive) return;
-                  clearCurrentDrawing();
-                })}
-                onMouseOver={(e) => {
-                  if (!isDrawingToolActive) return;
-                  e.currentTarget.style.background = "rgba(51,158,234,0.78)";
-                }}
-                onMouseOut={(e) => {
-                  if (!isDrawingToolActive) return;
-                  e.currentTarget.style.background = "rgba(0,0,0,0.56)";
-                }}
-              >
-                <TrashIcon />
-              </button>
             </div>
           )}
 
@@ -3344,7 +3460,7 @@ export function ImageLightboxCarousel({
                 ? "rgba(51,158,234,0.88)"
                 : "rgba(0,0,0,0.56)",
               color: "white",
-              cursor: (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible) ? "default" : "pointer",
+              cursor: ((activeSidebarTool === "measurement" || activeSidebarTool === "calibration" || (activeSidebarTool === "mask" && maskEditTool !== null)) && !isMeasurementOverlayVisible) ? "default" : "pointer",
               lineHeight: 0,
               display: "inline-flex",
               flexDirection: "column",
@@ -3352,10 +3468,10 @@ export function ImageLightboxCarousel({
               justifyContent: "center",
               gap: 2,
               transition: "background 0.15s, opacity 0.3s",
-              opacity: isAstmMenuOpen ? (currentMeasurementOverlayUrl ? ((activeSidebarTool !== "overview" && !isMeasurementOverlayVisible) ? 0.4 : 1) : 0.55) : 0,
+              opacity: isAstmMenuOpen ? (currentMeasurementOverlayUrl ? (((activeSidebarTool === "measurement" || activeSidebarTool === "calibration" || (activeSidebarTool === "mask" && maskEditTool !== null)) && !isMeasurementOverlayVisible) ? 0.4 : 1) : 0.55) : 0,
               pointerEvents: isAstmMenuOpen ? "auto" : "none",
             }}
-            disabled={!currentMeasurementOverlayUrl || (activeSidebarTool !== "overview" && !isMeasurementOverlayVisible) || !isAstmMenuOpen}
+            disabled={!currentMeasurementOverlayUrl || ((activeSidebarTool === "measurement" || activeSidebarTool === "calibration" || (activeSidebarTool === "mask" && maskEditTool !== null)) && !isMeasurementOverlayVisible) || !isAstmMenuOpen}
             onClick={(e) => {
               e.stopPropagation();
               onCheckMicrographLimit(() => {

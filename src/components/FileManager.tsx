@@ -2503,7 +2503,7 @@ export function ImageLightboxCarousel({
             setZoomScale(prev => Math.min(Math.max(1, prev + prev * zoomDelta), 10));
           }}
           onMouseDown={(e) => {
-            if (e.button === 1 || (e.button === 0 && activeSidebarTool === "overview")) {
+            if (e.button === 1 || (e.button === 0 && (activeSidebarTool === "overview" || (activeSidebarTool === "mask" && !maskEditTool)))) {
               e.preventDefault();
               setIsPanning(true);
               lastPanPos.current = { x: e.clientX, y: e.clientY };
@@ -3059,40 +3059,46 @@ export function ImageLightboxCarousel({
                 >
                   <InclusionsIcon />
                 </button>
-                {inclusionsVisibleByImageUrl?.[currentImage.url] && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                    <span style={{ 
-                      fontSize: 12, 
-                      fontWeight: "bold", 
-                      color: "white", 
-                      userSelect: "none",
-                      background: "rgba(0,0,0,0.56)",
-                      padding: "4px 8px",
-                      borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.1)"
-                    }}>
-                      {(inclusionsThreshold * 100).toFixed(0)}%
-                    </span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      value={inclusionsThreshold}
-                      onChange={(e) => setInclusionsThreshold(parseFloat(e.target.value))}
-                      title={`Threshold de confianza: ${(inclusionsThreshold * 100).toFixed(0)}%`}
-                      style={{
-                        height: 100,
-                        width: 40,
-                        writingMode: "vertical-lr",
-                        direction: "rtl",
-                        accentColor: "#339eea",
-                        cursor: "pointer",
-                        margin: 0
-                      }}
-                    />
-                  </div>
-                )}
+                <div style={{ 
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+                  overflow: "hidden",
+                  maxHeight: inclusionsVisibleByImageUrl?.[currentImage.url] ? 200 : 0,
+                  opacity: inclusionsVisibleByImageUrl?.[currentImage.url] ? 1 : 0,
+                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                  marginTop: inclusionsVisibleByImageUrl?.[currentImage.url] ? 4 : 0,
+                  pointerEvents: inclusionsVisibleByImageUrl?.[currentImage.url] ? "auto" : "none"
+                }}>
+                  <span style={{ 
+                    fontSize: 12, 
+                    fontWeight: "bold", 
+                    color: "white", 
+                    userSelect: "none",
+                    background: "rgba(0,0,0,0.56)",
+                    padding: "4px 8px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.1)"
+                  }}>
+                    {(inclusionsThreshold * 100).toFixed(0)}%
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={inclusionsThreshold}
+                    onChange={(e) => setInclusionsThreshold(parseFloat(e.target.value))}
+                    title={`Threshold de confianza: ${(inclusionsThreshold * 100).toFixed(0)}%`}
+                    style={{
+                      height: 100,
+                      width: 40,
+                      writingMode: "vertical-lr",
+                      direction: "rtl",
+                      accentColor: "#339eea",
+                      cursor: "pointer",
+                      margin: 0
+                    }}
+                  />
+                </div>
               </div>
               {/* ---- Pencil tool ---- */}
               <div style={{ position: "relative" }}>
@@ -3135,96 +3141,33 @@ export function ImageLightboxCarousel({
                 <PencilIcon />
               </button>
               
-              {/* Color picker indicator dot */}
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowColorPicker((prev) => !prev);
-                }}
-                style={{
-                  position: "absolute",
-                  bottom: -2,
-                  right: -2,
-                  width: 16,
-                  height: 16,
-                  borderRadius: "50%",
-                  background: pencilColor,
-                  border: "2px solid rgba(255,255,255,0.9)",
-                  cursor: "pointer",
-                  boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
-                  transition: "transform 0.15s",
+              {/* Color picker vertical drawer */}
+              <div style={{ 
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
                   overflow: "hidden",
-                }}
-              />
-
-              {/* Glassmorphism Color picker popover */}
-              {showColorPicker && (
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    position: "absolute",
-                    top: "50%",
-                    left: "calc(100% + 16px)",
-                    transform: "translateY(-50%)",
-                    zIndex: 60,
-                    background: "rgba(15, 17, 21, 0.95)",
-                    backdropFilter: "blur(16px)",
-                    borderRadius: 16,
-                    padding: 16,
-                    boxShadow: "0 20px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1)",
-                    animation: "dropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
-                    width: 200,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 12,
-                  }}
-                >
-                  <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: "0.05em", textTransform: "uppercase", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    Color del trazo
-                    <button 
-                      onClick={() => setShowColorPicker(false)}
-                      style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", cursor: "pointer", padding: 0 }}
-                    >×</button>
-                  </div>
-                  
-                  {/* Swatches Grid */}
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
-                    {["#ffffff", "#ff3b30", "#ff9500", "#ffcc00", "#4cd964", "#5ac8fa", "#007aff", "#5856d6", "#ff2d55", "#000000"].map((c) => (
-                      <div
-                        key={c}
-                        onClick={() => setPencilColor(c)}
-                        style={{
-                          aspectRatio: "1",
-                          borderRadius: "50%",
-                          background: c,
-                          cursor: "pointer",
-                          border: pencilColor.toLowerCase() === c ? "2px solid #339eea" : "2px solid rgba(255,255,255,0.15)",
-                          boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
-                          transform: pencilColor.toLowerCase() === c ? "scale(1.15)" : "scale(1)",
-                          transition: "all 0.2s",
-                        }}
-                      />
-                    ))}
-                  </div>
-
-                  <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "2px 0" }} />
-
-                  {/* Custom Color (Native Fallback beautifully wrapped) */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  maxHeight: maskEditTool === "pencil" ? 300 : 0,
+                  opacity: maskEditTool === "pencil" ? 1 : 0,
+                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                  marginTop: maskEditTool === "pencil" ? 4 : 0,
+                  pointerEvents: maskEditTool === "pencil" ? "auto" : "none"
+                }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "rgba(0,0,0,0.3)", padding: "8px 6px", borderRadius: 24, border: "1px solid rgba(255,255,255,0.1)" }}>
                     <label
                       title="Abrir paleta avanzada..."
                       style={{
                         position: "relative",
-                        width: 32,
-                        height: 32,
+                        width: 28,
+                        height: 28,
                         borderRadius: "50%",
-                        background: pencilColor,
-                        border: "2px solid rgba(255,255,255,0.2)",
+                        background: "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)",
                         cursor: "pointer",
                         overflow: "hidden",
+                        display: "flex", alignItems: "center", justifyContent: "center",
                         flexShrink: 0,
+                        boxShadow: "0 2px 5px rgba(0,0,0,0.5)"
                       }}
                     >
+                      <div style={{ width: 18, height: 18, borderRadius: "50%", background: pencilColor, border: "2px solid rgba(255,255,255,0.9)", pointerEvents: "none" }} />
                       <input
                         type="color"
                         value={pencilColor}
@@ -3232,32 +3175,29 @@ export function ImageLightboxCarousel({
                         style={{ opacity: 0, position: "absolute", width: "200%", height: "200%", top: "-50%", left: "-50%", cursor: "pointer" }}
                       />
                     </label>
-                    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-                      <span style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>CÓDIGO HEX</span>
-                      <input 
-                        type="text" 
-                        value={pencilColor.toUpperCase()}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setPencilColor(val);
-                        }}
+
+                    <div style={{ width: "100%", height: 1, background: "rgba(255,255,255,0.1)" }} />
+
+                    {["#ffffff", "#ff3b30", "#ffcc00", "#4cd964", "#007aff", "#000000"].map((c) => (
+                      <div
+                        key={c}
+                        onClick={() => setPencilColor(c)}
                         style={{
-                          background: "transparent",
-                          border: "none",
-                          color: "white",
-                          fontSize: "0.85rem",
-                          fontWeight: 600,
-                          fontFamily: "monospace",
-                          outline: "none",
-                          width: "100%",
-                          padding: 0,
-                          margin: 0,
+                          width: 24,
+                          height: 24,
+                          borderRadius: "50%",
+                          background: c,
+                          cursor: "pointer",
+                          border: pencilColor.toLowerCase() === c ? "2px solid #339eea" : "2px solid rgba(255,255,255,0.15)",
+                          boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
+                          transform: pencilColor.toLowerCase() === c ? "scale(1.15)" : "scale(1)",
+                          transition: "all 0.2s",
+                          margin: "0 auto"
                         }}
                       />
-                    </div>
+                    ))}
                   </div>
-                </div>
-              )}
+              </div>
               </div>
               {/* ---- Eraser tool ---- */}
               <button

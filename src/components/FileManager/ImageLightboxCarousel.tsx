@@ -832,6 +832,16 @@ export function ImageLightboxCarousel({
     }
     resetCalibrationState(false);
     setActiveSidebarTool("calibration");
+    
+    // Desactivar mediciones
+    setShowMeasurements(false);
+    resetMeasurementState();
+    setIsAstmMenuOpen(false);
+    
+    // Desactivar dibujo/máscara
+    setMaskEditTool(null);
+    setIsMaskDrawing(false);
+    setIsPencilMenuOpen(false);
 
     // 1. Check if another image has same dimensions and has calibration
     const img = imgRef.current;
@@ -880,6 +890,12 @@ export function ImageLightboxCarousel({
       }
     } else {
       resetCalibrationState(false);
+      
+      // Desactivar dibujo/máscara
+      setMaskEditTool(null);
+      setIsMaskDrawing(false);
+      setIsPencilMenuOpen(false);
+
       setShowMeasurements(true);
       setActiveSidebarTool("measurement");
       setTimeout(syncCanvasSize, 50);
@@ -1909,6 +1925,13 @@ export function ImageLightboxCarousel({
                       if (next) {
                         setIsZoomMenuOpen(false);
                         setIsNavMenuOpen(false);
+                        
+                        // Desactivar calibración y mediciones
+                        resetCalibrationState(false);
+                        setShowMeasurements(false);
+                        resetMeasurementState();
+                        setIsAstmMenuOpen(false);
+                        
                         setActiveSidebarTool("mask");
                         setMaskEditTool("pencil");
                       } else {

@@ -61,7 +61,8 @@ export function isMicrografiaDuplicateError(error: ApiLikeError | null | undefin
 }
 
 import * as api from "../services/api";
-export const ENABLE_AUTOCALIBRATION = false;
+export let ENABLE_AUTOCALIBRATION = false;
+export const setEnableAutoCalibration = (v: boolean) => { ENABLE_AUTOCALIBRATION = v; };
 
 const autoCalibrateQueue: Array<{ fd: FormData; imageUrl: string; sourceWidth: number; sourceHeight: number }> = [];
 let isProcessingCalibrationQueue = false;

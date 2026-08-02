@@ -1,7 +1,8 @@
 import * as api from "../services/api";
 
 
-export const ENABLE_AUTOCALIBRATION = false;
+export let ENABLE_AUTOCALIBRATION = false;
+export const setEnableAutoCalibration = (v: boolean) => { ENABLE_AUTOCALIBRATION = v; };
 
 export const autoCalibrateQueue: Array<{ fd: FormData; imageUrl: string; sourceWidth: number; sourceHeight: number }> = [];
 

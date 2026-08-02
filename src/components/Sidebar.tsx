@@ -27,46 +27,25 @@ export default function Sidebar({
 
   return (
     <>
-      <div style={styles.sidebar}>
+      <div className="bg-white rounded-[16px] shadow-[0_4px_16px_rgba(16,36,63,0.08)] border border-[rgba(16,36,63,0.14)] border-b-[5px] border-b-[#339eea] flex flex-col items-center justify-between py-4 h-full w-full overflow-hidden">
         {/* Top: Brand Button */}
         <button 
           onClick={() => setShowAboutModal(true)}
-          style={styles.brandBtn}
+          className="flex items-center justify-center w-full max-w-[42px] aspect-square h-auto rounded-xl bg-transparent border-none transition-all duration-200 ease-out cursor-pointer hover:-translate-y-[2px] hover:shadow-[0_6px_16px_rgba(51,158,234,0.4)]"
           title="Alberti Technology"
-          onMouseEnter={(e) => Object.assign(e.currentTarget.style, styles.btnHover)}
-          onMouseLeave={(e) => Object.assign(e.currentTarget.style, styles.btnNormal)}
+          
+          
         >
-          <img src={altechLogo} alt="Alberti Technology" style={{ width: '60%', height: 'auto', minWidth: '16px' }} />
+          <img src={altechLogo} alt="Alberti Technology" className="w-[60%] h-auto min-w-[16px]" />
         </button>
 
         {/* Middle Buttons */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+        <div className="flex-1 flex flex-col items-center justify-center gap-4">
           {/* Admin Button */}
           <button 
             onClick={onToggleAdmin}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '42px',
-              height: '42px',
-              borderRadius: '12px',
-              background: showAdmin ? '#eef8ff' : 'transparent',
-              color: '#339eea',
-              border: 'none',
-              transition: 'all 0.2s ease',
-              cursor: 'pointer',
-              boxShadow: showAdmin ? 'inset 0 2px 4px rgba(0,0,0,0.05)' : 'none'
-            }}
+            className={`flex items-center justify-center w-[42px] h-[42px] rounded-xl text-[#339eea] border-none transition-all duration-200 cursor-pointer ${showAdmin ? "bg-[#eef8ff] shadow-[inset_0_2px_4px_rgba(0,0,0,0.05)]" : "bg-transparent hover:bg-[#eef8ff] hover:-translate-y-[2px]"}`}
             title="Administrador"
-            onMouseEnter={(e) => {
-              if (!showAdmin) e.currentTarget.style.background = '#eef8ff';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-            }}
-            onMouseLeave={(e) => {
-              if (!showAdmin) e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'none';
-            }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -76,29 +55,8 @@ export default function Sidebar({
           {/* Gallery Button */}
           <button 
             onClick={onToggleGallery}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '42px',
-              height: '42px',
-              borderRadius: '12px',
-              background: showGallery ? '#eef8ff' : 'transparent',
-              color: '#339eea',
-              border: 'none',
-              transition: 'all 0.2s ease',
-              cursor: 'pointer',
-              boxShadow: showGallery ? 'inset 0 2px 4px rgba(0,0,0,0.05)' : 'none'
-            }}
+            className={`flex items-center justify-center w-[42px] h-[42px] rounded-xl text-[#339eea] border-none transition-all duration-200 cursor-pointer ${showGallery ? "bg-[#eef8ff] shadow-[inset_0_2px_4px_rgba(0,0,0,0.05)]" : "bg-transparent hover:bg-[#eef8ff] hover:-translate-y-[2px]"}`}
             title="Galería"
-            onMouseEnter={(e) => {
-              if (!showGallery) e.currentTarget.style.background = '#eef8ff';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-            }}
-            onMouseLeave={(e) => {
-              if (!showGallery) e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'none';
-            }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -110,29 +68,8 @@ export default function Sidebar({
           {/* Reports Button */}
           <button 
             onClick={onToggleReports}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '42px',
-              height: '42px',
-              borderRadius: '12px',
-              background: showReports ? '#eef8ff' : 'transparent',
-              color: '#339eea',
-              border: 'none',
-              transition: 'all 0.2s ease',
-              cursor: 'pointer',
-              boxShadow: showReports ? 'inset 0 2px 4px rgba(0,0,0,0.05)' : 'none'
-            }}
+            className={`flex items-center justify-center w-[42px] h-[42px] rounded-xl text-[#339eea] border-none transition-all duration-200 cursor-pointer ${showReports ? "bg-[#eef8ff] shadow-[inset_0_2px_4px_rgba(0,0,0,0.05)]" : "bg-transparent hover:bg-[#eef8ff] hover:-translate-y-[2px]"}`}
             title="Informes"
-            onMouseEnter={(e) => {
-              if (!showReports) e.currentTarget.style.background = '#eef8ff';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-            }}
-            onMouseLeave={(e) => {
-              if (!showReports) e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'none';
-            }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -146,29 +83,8 @@ export default function Sidebar({
           {/* Assistant Button */}
           <button 
             onClick={onToggleAssistant}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '42px',
-              height: '42px',
-              borderRadius: '12px',
-              background: showAssistant ? '#eef8ff' : 'transparent',
-              color: '#339eea',
-              border: 'none',
-              transition: 'all 0.2s ease',
-              cursor: 'pointer',
-              boxShadow: showAssistant ? 'inset 0 2px 4px rgba(0,0,0,0.05)' : 'none'
-            }}
+            className={`flex items-center justify-center w-[42px] h-[42px] rounded-xl text-[#339eea] border-none transition-all duration-200 cursor-pointer ${showAssistant ? "bg-[#eef8ff] shadow-[inset_0_2px_4px_rgba(0,0,0,0.05)]" : "bg-transparent hover:bg-[#eef8ff] hover:-translate-y-[2px]"}`}
             title="Asistente"
-            onMouseEnter={(e) => {
-              if (!showAssistant) e.currentTarget.style.background = '#eef8ff';
-              e.currentTarget.style.transform = 'translateY(-2px)';
-            }}
-            onMouseLeave={(e) => {
-              if (!showAssistant) e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'none';
-            }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
@@ -184,10 +100,10 @@ export default function Sidebar({
         {/* Bottom: Logout Button */}
         <button 
           onClick={() => setShowLogoutModal(true)}
-          style={styles.logoutBtn}
+          className="flex items-center justify-center w-[42px] h-[42px] rounded-xl bg-transparent text-[#e53e3e] border-none transition-all duration-200 cursor-pointer hover:bg-[#fff5f5] hover:-translate-y-[2px]"
           title="Cerrar sesión"
-          onMouseEnter={(e) => Object.assign(e.currentTarget.style, styles.logoutHover)}
-          onMouseLeave={(e) => Object.assign(e.currentTarget.style, styles.logoutNormal)}
+          
+          
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -247,7 +163,7 @@ export default function Sidebar({
               }}>
                 Powered by
                 <a 
-                  href="https://alberti-technology.vercel.app/metalurgia"
+                  href="https://albertitechnology.com"
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ 

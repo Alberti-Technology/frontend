@@ -5,7 +5,7 @@ import * as cache from '../../utils/cache';
 describe('useMeasurementStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(cache, 'writeMeasurementsCacheStore').mockImplementation(() => {});
+    vi.spyOn(cache, 'writeMeasurementsCacheStore').mockImplementation(() => true);
     vi.spyOn(cache, 'readMeasurementsCacheStore').mockImplementation(() => ({}));
     
     useMeasurementStore.setState({

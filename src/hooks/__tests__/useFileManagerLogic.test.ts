@@ -156,17 +156,17 @@ describe('useFileManagerLogic', () => {
       fd.append('nombre', 'Test');
 
       // Test Muestra
-      act(() => { useAppStore.setState({ createModal: { type: 'muestra', initialParentId: '0' } }); });
+      act(() => { useAppStore.setState({ createModal: { type: 'muestra', parentId: '0' } }); });
       await act(async () => { await result.current.handleCreate([fd]); });
       expect(api.createMuestra).toHaveBeenCalled();
 
       // Test Region
-      act(() => { useAppStore.setState({ createModal: { type: 'region', initialParentId: '0' } }); });
+      act(() => { useAppStore.setState({ createModal: { type: 'region', parentId: '0' } }); });
       await act(async () => { await result.current.handleCreate([fd]); });
       expect(api.createRegion).toHaveBeenCalled();
 
       // Test Material
-      act(() => { useAppStore.setState({ createModal: { type: 'material', initialParentId: '0' } }); });
+      act(() => { useAppStore.setState({ createModal: { type: 'material', parentId: '0' } }); });
       await act(async () => { await result.current.handleCreate([fd]); });
       expect(api.createMaterial).toHaveBeenCalled();
     });
@@ -177,7 +177,7 @@ describe('useFileManagerLogic', () => {
       const fd1 = new FormData(); fd1.append('region', '1'); fd1.append('imagen', new Blob(['']));
       const fd2 = new FormData(); fd2.append('region', '1'); fd2.append('imagen', new Blob(['']));
 
-      act(() => { useAppStore.setState({ createModal: { type: 'micrografia', initialParentId: '1' } }); });
+      act(() => { useAppStore.setState({ createModal: { type: 'micrografia', parentId: '1' } }); });
       
       await act(async () => {
         await result.current.handleCreate([fd1, fd2]);
@@ -189,7 +189,7 @@ describe('useFileManagerLogic', () => {
 
     it('debe manejar errores en la creación simple', async () => {
       const { result } = renderHook(() => useFileManagerLogic());
-      act(() => { useAppStore.setState({ createModal: { type: 'muestra', initialParentId: '0' } }); });
+      act(() => { useAppStore.setState({ createModal: { type: 'muestra', parentId: '0' } }); });
       vi.mocked(api.createMuestra).mockRejectedValueOnce(new Error('Error'));
 
       const fd = new FormData();
@@ -206,7 +206,7 @@ describe('useFileManagerLogic', () => {
     
     it('debe manejar errores y duplicados en creación multiple de micrografias', async () => {
       const { result } = renderHook(() => useFileManagerLogic());
-      act(() => { useAppStore.setState({ createModal: { type: 'micrografia', initialParentId: '1' } }); });
+      act(() => { useAppStore.setState({ createModal: { type: 'micrografia', parentId: '1' } }); });
       
       vi.mocked(api.createMicrografia).mockRejectedValueOnce(new Error('Duplicate'));
       vi.mocked(helpers.isMicrografiaDuplicateError).mockReturnValueOnce(true);

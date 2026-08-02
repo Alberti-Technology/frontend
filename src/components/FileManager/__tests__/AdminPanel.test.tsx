@@ -24,16 +24,19 @@ describe('AdminPanel', () => {
       {
         id: 'mat_1',
         name: 'Mat 1',
+        image: '',
         muestras: [
           {
             id: 'mue_1',
             name: 'Mue 1',
+            image: '',
             regiones: [
               {
                 id: 'reg_1',
                 name: 'Reg 1',
+                image: '',
                 micrografias: [
-                  { id: 'mic_1', name: 'Mic 1', url: 'img1.jpg', rawId: '1', width: 100, height: 100 }
+                  { id: 'mic_1', name: 'Mic 1', url: 'img1.jpg', rawId: '1', width: 100, height: 100, umByPx: null }
                 ]
               }
             ]

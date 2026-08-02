@@ -21,12 +21,12 @@ describe('useDataStore', () => {
 
   it('debe permitir actualizar apiMuestras y setSelectedId', () => {
     const mockMuestras: ApiMuestra[] = [
-      { id: 1, name: 'Muestra 1', material_id: 1, created_at: '', updated_at: '' }
+      { id: 1, nombre: 'Muestra 1', material: 1, imagen: '' }
     ];
 
     useDataStore.getState().setApiMuestras(mockMuestras);
     expect(useDataStore.getState().apiMuestras).toHaveLength(1);
-    expect(useDataStore.getState().apiMuestras[0].name).toBe('Muestra 1');
+    expect(useDataStore.getState().apiMuestras[0].nombre).toBe('Muestra 1');
 
     useDataStore.getState().setSelectedId('muestra-1');
     expect(useDataStore.getState().selectedId).toBe('muestra-1');

@@ -35,8 +35,8 @@ describe('useAppStore', () => {
   });
 
   it('debe manejar setGalleryView', () => {
-    useAppStore.getState().setGalleryView({ kind: 'material', id: 1 });
-    expect(useAppStore.getState().galleryView).toEqual({ kind: 'material', id: 1 });
+    useAppStore.getState().setGalleryView({ kind: 'micrografias', images: [] });
+    expect(useAppStore.getState().galleryView).toEqual({ kind: 'micrografias', images: [] });
   });
 
   it('debe actualizar modales', () => {
